@@ -46,6 +46,8 @@ function App() {
         }
       />
 
+      <Route path="/instagram/callback" element={<InstagramCallbackPage />} />
+
       <Route path="/dashboard" element={<DashboardLayout />}>
         <Route index element={<Navigate to="home" replace />} />
         <Route path="home" element={<HomePage />} />
