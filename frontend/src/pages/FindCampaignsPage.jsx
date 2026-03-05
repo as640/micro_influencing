@@ -1,0 +1,120 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { campaignApi, conversationApi } from '../api';
+import { useAuth } from '../context/AuthContext';
+
+function formatNumber(num) {
+    if (!num) return '--';
+    return Number(num).toLocaleString('en-IN');
+}
+
+function FindCampaignsPage() {
+    const { user } = useAuth();
+    const navigate = useNavigate();
+    const [campaigns, setCampaigns] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [applyingTo, setApplyingTo] = useState(null);
+
+    useEffect(() => {
+        async function loadCampaigns() {
+            try {
+                const data = await campaignApi.list();
+                setCampaigns(data);
+            } catch (err) {
+                console.error('Failed to load campaigns', err);
+            } finally {
+                setLoading(false);
+            }
+        }
+        loadCampaigns();
+    }, []);
+
+    const handleApply = async (businessId, campaignId) => {
+        try {
+            setApplyingTo(campaignId);
+            // Start a conversation with the business
+            await conversationApi.create({ business_id: businessId });
+            // Redirect to messages so influencer can pitch themselves
+            navigate('/dashboard/messages');
+        } catch (err) {
+            console.error('Failed to apply', err);
+            alert('Could not start conversation with this business.');
+        } finally {
+            setApplyingTo(null);
+        }
+    };
+
+    if (user?.role !== 'influencer') {
+        return (
+            <div className="flex h-48 items-center justify-center text-slate-400">
+                You do not have access to this page.
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-2xl font-bold text-white">Find Campaigns</h2>
+                    <p className="mt-1 text-slate-400">Browse live collaboration opportunities posted by businesses.</p>
+                </div>
+            </div>
+
+            {loading ? (
+                <div className="text-center text-slate-400 py-12">Loading opportunities...</div>
+            ) : campaigns.length === 0 ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center text-slate-400">
+                    No active campaigns found. Check back later!
+                </div>
+            ) : (
+                <div className="grid gap-6 md:grid-cols-2">
+                    {campaigns.map((camp) => (
+                        <div key={camp.id} className="glow-hover flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-sm transition-all hover:border-slate-700">
+                            <div>
+                                <div className="mb-4 flex items-center justify-between">
+                                    <span className="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-400 tracking-wider uppercase">
+                                        {camp.required_ad_type.replace('_', ' ')}
+                                    </span>
+                                    <span className="text-xs text-slate-500">
+                                        Posted {new Date(camp.created_at).toLocaleDateString()}
+                                    </span>
+                                </div>
+
+                                <h3 className="text-xl font-bold text-white mb-2">{camp.title}</h3>
+
+                                <p className="text-sm text-slate-400 mb-6 line-clamp-3">
+                                    {camp.description || "No description provided."}
+                                </p>
+
+                                <div className="grid grid-cols-2 gap-4 rounded-lg bg-slate-950/50 p-4 border border-slate-800/80 mb-6">
+                                    <div>
+                                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Company</p>
+                                        <p className="mt-1 font-semibold text-slate-200 truncate">{camp.business_info?.company_name}</p>
+                                        <p className="text-xs text-slate-500 capitalize">{camp.business_info?.industry}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Budget Range</p>
+                                        <p className="mt-1 font-bold text-emerald-400">
+                                            ₹{formatNumber(camp.budget_min)} - ₹{formatNumber(camp.budget_max)}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => handleApply(camp.business_info?.id, camp.id)}
+                                disabled={applyingTo === camp.id}
+                                className="w-full rounded-lg bg-indigo-600 py-3 font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                            >
+                                {applyingTo === camp.id ? 'Connecting...' : "I'm Interested"}
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+export default FindCampaignsPage;
