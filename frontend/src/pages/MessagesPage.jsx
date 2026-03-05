@@ -56,11 +56,11 @@ function MessagesPage() {
 
   // Determine the other party's display name in a conversation
   const getOtherParty = (convo) => {
-    if (!user) return 'Unknown';
+    if (!convo || !user) return 'Unknown';
     if (user.role === 'business') {
-      return convo.influencer?.instagram_handle || convo.influencer_email || 'Influencer';
+      return convo.influencer_handle ? `@${convo.influencer_handle}` : 'Influencer';
     }
-    return convo.business?.company_name || convo.business_email || 'Business';
+    return convo.business_name || 'Business';
   };
 
   const getLastMessage = (convo) => {
@@ -129,12 +129,12 @@ function MessagesPage() {
                   <p className="text-center text-sm text-slate-500">No messages yet. Say hello! 👋</p>
                 ) : (
                   thread.messages?.map((msg, i) => {
-                    const isMe = msg.sender_id === user?.id || msg.sender === user?.email;
+                    const isMe = msg.sender_email === user?.email;
                     return (
                       <div key={msg.id} className={`animate-fade-up flex ${isMe ? 'justify-end' : 'justify-start'}`}
                         style={{ animationDelay: `${i * 40}ms` }}>
                         <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm md:max-w-[70%] ${isMe ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30'
-                            : 'border border-slate-700 bg-slate-800 text-slate-100'}`}>
+                          : 'border border-slate-700 bg-slate-800 text-slate-100'}`}>
                           <p>{msg.content}</p>
                           <p className={`mt-1 text-[11px] ${isMe ? 'text-indigo-200' : 'text-slate-500'}`}>
                             {formatTime(msg.created_at)}

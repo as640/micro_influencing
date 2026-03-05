@@ -91,7 +91,7 @@ export const influencerApi = {
 };
 
 export const campaignApi = {
-    list: () => request('GET', '/campaigns/'),
+    list: (params = '') => request('GET', `/campaigns/${params ? '?' + params : ''}`),
     detail: (id) => request('GET', `/campaigns/${id}/`),
     create: (data) => request('POST', '/campaigns/', data),
 };

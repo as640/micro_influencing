@@ -187,6 +187,7 @@ class InfluencerDetailView(RetrieveAPIView):
 class CampaignFilter(django_filters.FilterSet):
     min_budget = django_filters.NumberFilter(field_name='budget_min', lookup_expr='gte')
     max_budget = django_filters.NumberFilter(field_name='budget_max', lookup_expr='lte')
+    business_locality = django_filters.CharFilter(field_name='business__locality', lookup_expr='icontains')
 
     class Meta:
         model  = Campaign

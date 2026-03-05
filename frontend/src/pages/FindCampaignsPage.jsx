@@ -15,10 +15,26 @@ function FindCampaignsPage() {
     const [loading, setLoading] = useState(true);
     const [applyingTo, setApplyingTo] = useState(null);
 
+    const [filters, setFilters] = useState({
+        required_ad_type: '',
+        business_locality: '',
+        min_budget: '',
+        max_budget: ''
+    });
+
+    const [appliedFilters, setAppliedFilters] = useState({});
+
     useEffect(() => {
         async function loadCampaigns() {
+            setLoading(true);
             try {
-                const data = await campaignApi.list();
+                const params = new URLSearchParams();
+                if (appliedFilters.required_ad_type) params.append('required_ad_type', appliedFilters.required_ad_type);
+                if (appliedFilters.business_locality) params.append('business_locality', appliedFilters.business_locality);
+                if (appliedFilters.min_budget) params.append('min_budget', appliedFilters.min_budget);
+                if (appliedFilters.max_budget) params.append('max_budget', appliedFilters.max_budget);
+
+                const data = await campaignApi.list(params.toString());
                 setCampaigns(data);
             } catch (err) {
                 console.error('Failed to load campaigns', err);
@@ -27,7 +43,20 @@ function FindCampaignsPage() {
             }
         }
         loadCampaigns();
-    }, []);
+    }, [appliedFilters]);
+
+    const handleFilterChange = (e) => {
+        setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    };
+
+    const applyFilters = () => {
+        setAppliedFilters(filters);
+    };
+
+    const clearFilters = () => {
+        setFilters({ required_ad_type: '', business_locality: '', min_budget: '', max_budget: '' });
+        setAppliedFilters({});
+    };
 
     const handleApply = async (businessId, campaignId) => {
         try {
@@ -54,10 +83,50 @@ function FindCampaignsPage() {
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h2 className="text-2xl font-bold text-white">Find Campaigns</h2>
                     <p className="mt-1 text-slate-400">Browse live collaboration opportunities posted by businesses.</p>
+                </div>
+            </div>
+
+            {/* Filters Section */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 shadow-sm">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <select
+                        name="required_ad_type"
+                        value={filters.required_ad_type} onChange={handleFilterChange}
+                        className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
+                    >
+                        <option value="">Any Ad Format</option>
+                        <option value="post">Instagram Post</option>
+                        <option value="reel">Instagram Reel</option>
+                        <option value="story">Instagram Story</option>
+                        <option value="brand_ambassador">Brand Ambassador</option>
+                    </select>
+                    <input
+                        type="text" name="business_locality" placeholder="Business Locality"
+                        value={filters.business_locality} onChange={handleFilterChange}
+                        className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
+                    />
+                    <input
+                        type="number" name="min_budget" placeholder="Min Budget (₹)"
+                        value={filters.min_budget} onChange={handleFilterChange}
+                        className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
+                    />
+                    <input
+                        type="number" name="max_budget" placeholder="Max Budget (₹)"
+                        value={filters.max_budget} onChange={handleFilterChange}
+                        className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
+                    />
+                </div>
+                <div className="mt-4 flex items-center justify-end gap-3 border-t border-slate-800 pt-4">
+                    <button onClick={clearFilters} className="text-sm font-semibold text-slate-400 hover:text-white">
+                        Clear Filters
+                    </button>
+                    <button onClick={applyFilters} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        Search Campaigns
+                    </button>
                 </div>
             </div>
 
