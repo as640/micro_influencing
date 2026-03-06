@@ -164,7 +164,7 @@ SIMPLE_JWT = {
 INSTAGRAM_APP_ID        = config('INSTAGRAM_APP_ID',       default='')
 INSTAGRAM_APP_SECRET    = config('INSTAGRAM_APP_SECRET',   default='')
 # Must exactly match a URI you registered in the Facebook Developer Portal
-INSTAGRAM_REDIRECT_URI  = config('INSTAGRAM_REDIRECT_URI', default='http://localhost:3000/instagram/callback')
+INSTAGRAM_REDIRECT_URI  = config('INSTAGRAM_REDIRECT_URI', default='http://localhost:5173/instagram/callback')
 
 # ---------------------------------------------------------------------------
 # Razorpay Payments (Phase 6 — Escrow)
