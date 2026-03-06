@@ -157,6 +157,15 @@ class InfluencerProfile(models.Model):
     instagram_access_token      = models.TextField(blank=True, null=True)
     instagram_token_expires_at  = models.DateTimeField(blank=True, null=True)
 
+    # ---------------------------------------------------------------------------
+    # Payout Details (filled by influencer so platform can transfer earnings)
+    # ---------------------------------------------------------------------------
+    upi_id                  = models.CharField(max_length=100, blank=True, default='',
+                                help_text='e.g. name@upi or 9876543210@paytm')
+    bank_account_number     = models.CharField(max_length=30,  blank=True, default='')
+    bank_ifsc_code          = models.CharField(max_length=15,  blank=True, default='')
+    bank_account_holder_name = models.CharField(max_length=120, blank=True, default='')
+
     updated_at           = models.DateTimeField(auto_now=True)
 
     class Meta:

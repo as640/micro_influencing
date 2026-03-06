@@ -27,6 +27,16 @@ function AccountInfoPage() {
     website_url: profile.website_url || '',
   });
 
+  // Separate state for payout details so it saves independently
+  const [payoutForm, setPayoutForm] = useState({
+    upi_id: profile.upi_id || '',
+    bank_account_number: profile.bank_account_number || '',
+    bank_ifsc_code: profile.bank_ifsc_code || '',
+    bank_account_holder_name: profile.bank_account_holder_name || '',
+  });
+  const [savingPayout, setSavingPayout] = useState(false);
+  const [payoutSaved, setPayoutSaved] = useState(false);
+
   if (!user) {
     return <div className="flex h-48 items-center justify-center text-slate-400">Loading…</div>;
   }
@@ -47,6 +57,23 @@ function AccountInfoPage() {
       alert('Failed to save profile changes. Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePayoutSave = async (e) => {
+    e.preventDefault();
+    setSavingPayout(true);
+    setPayoutSaved(false);
+    try {
+      const updatedUser = await authApi.updateProfile(payoutForm);
+      login(updatedUser);
+      setPayoutSaved(true);
+      setTimeout(() => setPayoutSaved(false), 3000);
+    } catch (err) {
+      console.error('Failed to save payout details', err);
+      alert('Could not save payout details. Please try again.');
+    } finally {
+      setSavingPayout(false);
     }
   };
 
@@ -246,6 +273,89 @@ function AccountInfoPage() {
           </div>
         )}
       </form>
+
+      {/* ── Payout Details (influencers only) ─────────────────────── */}
+      {isInfluencer && (
+        <form onSubmit={handlePayoutSave} className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-sm">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-white">💳 Payout Details</h3>
+              <p className="mt-0.5 text-sm text-slate-400">
+                Add your UPI or bank details so we know where to transfer your earnings.
+              </p>
+            </div>
+            {payoutSaved && (
+              <span className="rounded-full bg-emerald-900/50 px-3 py-1 text-xs font-semibold text-emerald-400">✓ Saved</span>
+            )}
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            {/* UPI */}
+            <label className="block sm:col-span-2">
+              <span className="mb-1.5 block text-sm font-medium text-slate-500 uppercase tracking-wide">UPI ID</span>
+              <input
+                type="text"
+                name="upi_id"
+                value={payoutForm.upi_id}
+                onChange={(e) => setPayoutForm(p => ({ ...p, upi_id: e.target.value }))}
+                placeholder="yourname@paytm  or  9876543210@upi"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
+              />
+            </label>
+
+            {/* Bank Account Holder */}
+            <label className="block sm:col-span-2">
+              <span className="mb-1.5 block text-sm font-medium text-slate-500 uppercase tracking-wide">Account Holder Name</span>
+              <input
+                type="text"
+                name="bank_account_holder_name"
+                value={payoutForm.bank_account_holder_name}
+                onChange={(e) => setPayoutForm(p => ({ ...p, bank_account_holder_name: e.target.value }))}
+                placeholder="Name exactly as on bank account"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
+              />
+            </label>
+
+            {/* Account Number */}
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-slate-500 uppercase tracking-wide">Bank Account Number</span>
+              <input
+                type="text"
+                name="bank_account_number"
+                value={payoutForm.bank_account_number}
+                onChange={(e) => setPayoutForm(p => ({ ...p, bank_account_number: e.target.value }))}
+                placeholder="e.g. 00110012345678"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
+              />
+            </label>
+
+            {/* IFSC */}
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-slate-500 uppercase tracking-wide">IFSC Code</span>
+              <input
+                type="text"
+                name="bank_ifsc_code"
+                value={payoutForm.bank_ifsc_code}
+                onChange={(e) => setPayoutForm(p => ({ ...p, bank_ifsc_code: e.target.value.toUpperCase() }))}
+                placeholder="e.g. SBIN0001234"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 uppercase outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
+              />
+            </label>
+          </div>
+
+          {/* Security note */}
+          <div className="mt-4 rounded-lg bg-amber-900/20 border border-amber-700/30 px-4 py-3 text-xs text-amber-300">
+            🔒 Your payout details are stored securely and only visible to the MicroFluence admin team. They will never be shared with businesses.
+          </div>
+
+          <div className="mt-5 flex justify-end">
+            <button type="submit" disabled={savingPayout}
+              className="rounded-lg bg-indigo-600 px-8 py-2.5 font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50 shadow-lg shadow-indigo-600/20">
+              {savingPayout ? 'Saving…' : 'Save Payout Details'}
+            </button>
+          </div>
+        </form>
+      )}
 
     </section>
   );
