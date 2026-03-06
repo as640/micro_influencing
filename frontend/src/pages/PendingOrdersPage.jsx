@@ -47,6 +47,15 @@ function PendingOrdersPage() {
     finally { setUpdating(null); }
   };
 
+  const handleComplete = async (id) => {
+    setUpdating(id);
+    try {
+      await contractApi.updateStatus(id, 'completed');
+      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'completed' } : c));
+    } catch (err) { console.error(err); }
+    finally { setUpdating(null); }
+  };
+
   const pendingContracts = contracts.filter((c) => c.status === 'pending');
   const activeContracts = contracts.filter((c) => c.status === 'active');
   const completedContracts = contracts.filter((c) => c.status === 'completed');
@@ -98,8 +107,8 @@ function PendingOrdersPage() {
               <tbody className="divide-y divide-slate-800 bg-slate-900">
                 {contracts.map((c) => {
                   const otherParty = isInfluencer
-                    ? (c.business?.company_name || 'Business')
-                    : (c.influencer?.instagram_handle || 'Influencer');
+                    ? (c.business_name || 'Business')
+                    : (c.influencer_handle ? `@${c.influencer_handle}` : 'Influencer');
                   return (
                     <tr key={c.id} className="transition hover:bg-slate-800/40">
                       <td className="px-5 py-4 text-xs font-mono text-slate-400">{c.id?.slice(0, 8)}…</td>
@@ -121,10 +130,16 @@ function PendingOrdersPage() {
                           </div>
                         )}
                         {c.status === 'active' && !isInfluencer && (
-                          <button onClick={() => handleCancel(c.id)} disabled={updating === c.id}
-                            className="rounded bg-slate-700 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:bg-slate-600 disabled:opacity-50">
-                            Cancel
-                          </button>
+                          <div className="flex gap-2">
+                            <button onClick={() => handleComplete(c.id)} disabled={updating === c.id}
+                              className="rounded bg-emerald-700 px-3 py-1 text-xs font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50">
+                              ✓ Mark Complete
+                            </button>
+                            <button onClick={() => handleCancel(c.id)} disabled={updating === c.id}
+                              className="rounded bg-slate-700 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:bg-slate-600 disabled:opacity-50">
+                              Cancel
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>

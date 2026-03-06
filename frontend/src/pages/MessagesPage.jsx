@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { conversationApi } from '../api';
+import { useNavigate } from 'react-router-dom';
+import { contractApi, conversationApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 function MessagesPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [convos, setConvos] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [thread, setThread] = useState(null);
@@ -11,6 +13,12 @@ function MessagesPage() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const bottomRef = useRef(null);
+
+  // Contract proposal modal state
+  const [showContractModal, setShowContractModal] = useState(false);
+  const [contractForm, setContractForm] = useState({ agreed_price: '', deliverables: '' });
+  const [proposing, setProposing] = useState(false);
+  const [contractSuccess, setContractSuccess] = useState(false);
 
   // Load conversation list
   useEffect(() => {
@@ -27,6 +35,7 @@ function MessagesPage() {
   useEffect(() => {
     if (!selectedId) return;
     setThread(null);
+    setContractSuccess(false);
     conversationApi.detail(selectedId)
       .then((data) => { setThread(data); conversationApi.markRead(selectedId).catch(() => { }); })
       .catch(console.error);
@@ -44,7 +53,6 @@ function MessagesPage() {
     try {
       await conversationApi.sendMsg(selectedId, draft.trim());
       setDraft('');
-      // Refresh thread
       const updated = await conversationApi.detail(selectedId);
       setThread(updated);
     } catch (err) {
@@ -73,6 +81,31 @@ function MessagesPage() {
     return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   };
 
+  // Propose a contract to the influencer from this conversation
+  const handleProposeContract = async (e) => {
+    e.preventDefault();
+    if (!contractForm.agreed_price || !contractForm.deliverables.trim()) return;
+    const activeConvo = convos.find((c) => c.id === selectedId);
+    if (!activeConvo?.influencer) return;
+
+    setProposing(true);
+    try {
+      await contractApi.create({
+        influencer: activeConvo.influencer,
+        agreed_price: contractForm.agreed_price,
+        deliverables: contractForm.deliverables.trim(),
+      });
+      setShowContractModal(false);
+      setContractForm({ agreed_price: '', deliverables: '' });
+      setContractSuccess(true);
+    } catch (err) {
+      console.error('Failed to propose contract', err);
+      alert('Could not send contract proposal. Please try again.');
+    } finally {
+      setProposing(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center text-slate-400">
@@ -82,6 +115,7 @@ function MessagesPage() {
   }
 
   const activeConvo = convos.find((c) => c.id === selectedId);
+  const isBusiness = user?.role === 'business';
 
   return (
     <section className="h-[calc(100vh-9rem)] min-h-[560px] rounded-2xl border border-slate-800 bg-slate-900 shadow-sm animate-fade-up">
@@ -118,10 +152,41 @@ function MessagesPage() {
         <div className="flex h-full flex-col">
           {activeConvo ? (
             <>
-              <header className="border-b border-slate-800 px-5 py-4">
-                <p className="text-base font-semibold text-white">{getOtherParty(activeConvo)}</p>
+              {/* Chat Header */}
+              <header className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
+                <div>
+                  <p className="text-base font-semibold text-white">{getOtherParty(activeConvo)}</p>
+                  <p className="text-xs text-slate-500">Conversation</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {/* Contract Success Badge */}
+                  {contractSuccess && (
+                    <span className="rounded-full bg-emerald-900/50 px-3 py-1 text-xs font-semibold text-emerald-400">
+                      ✓ Contract Proposed
+                    </span>
+                  )}
+                  {/* "Propose Contract" button — only for businesses */}
+                  {isBusiness && (
+                    <button
+                      onClick={() => setShowContractModal(true)}
+                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500"
+                    >
+                      📋 Propose Contract
+                    </button>
+                  )}
+                  {/* Influencer: shortcut to view their pending orders */}
+                  {!isBusiness && (
+                    <button
+                      onClick={() => navigate('/dashboard/pending-orders')}
+                      className="rounded-lg border border-slateald-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700"
+                    >
+                      View Contract Offers
+                    </button>
+                  )}
+                </div>
               </header>
 
+              {/* Messages */}
               <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
                 {thread === null ? (
                   <p className="text-center text-sm text-slate-500">Loading…</p>
@@ -147,6 +212,7 @@ function MessagesPage() {
                 <div ref={bottomRef} />
               </div>
 
+              {/* Message input */}
               <form className="border-t border-slate-800 p-4" onSubmit={handleSend}>
                 <div className="flex gap-2">
                   <input value={draft} onChange={(e) => setDraft(e.target.value)}
@@ -167,6 +233,76 @@ function MessagesPage() {
           )}
         </div>
       </div>
+
+      {/* ── Contract Proposal Modal ─────────────────────────────────── */}
+      {showContractModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md animate-fade-up rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-white">📋 Propose a Contract</h3>
+                <p className="mt-0.5 text-sm text-slate-400">
+                  with {getOtherParty(activeConvo)}
+                </p>
+              </div>
+              <button onClick={() => setShowContractModal(false)}
+                className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleProposeContract} className="space-y-4">
+              {/* Agreed Price */}
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium text-slate-400 uppercase tracking-wide">
+                  Agreed Price (₹) <span className="text-red-400">*</span>
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  placeholder="e.g. 5000"
+                  value={contractForm.agreed_price}
+                  onChange={(e) => setContractForm(p => ({ ...p, agreed_price: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
+                />
+              </label>
+
+              {/* Deliverables */}
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium text-slate-400 uppercase tracking-wide">
+                  Deliverables <span className="text-red-400">*</span>
+                </span>
+                <textarea
+                  required
+                  rows={4}
+                  placeholder="e.g. 1 Instagram Reel, 2 Stories, posted within 7 days..."
+                  value={contractForm.deliverables}
+                  onChange={(e) => setContractForm(p => ({ ...p, deliverables: e.target.value }))}
+                  className="w-full resize-none rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
+                />
+              </label>
+
+              {/* Info note */}
+              <div className="rounded-lg bg-indigo-600/10 border border-indigo-700/30 px-4 py-3 text-sm text-indigo-300">
+                💡 After you submit, the influencer will see this offer in their <strong>Pending Orders</strong> page and can accept or decline.
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 border-t border-slate-800 pt-4">
+                <button type="button" onClick={() => setShowContractModal(false)}
+                  className="flex-1 rounded-lg border border-slate-700 bg-slate-800 py-2.5 font-semibold text-slate-300 transition hover:bg-slate-700">
+                  Cancel
+                </button>
+                <button type="submit" disabled={proposing}
+                  className="flex-1 rounded-lg bg-emerald-600 py-2.5 font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50">
+                  {proposing ? 'Sending…' : 'Send Proposal'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
