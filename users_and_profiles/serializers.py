@@ -273,6 +273,9 @@ class ConversationSerializer(serializers.ModelSerializer):
     # Surfaced info for each party
     business_name      = serializers.CharField(source='business.company_name',        read_only=True)
     influencer_handle  = serializers.CharField(source='influencer.instagram_handle',  read_only=True)
+    # Expose IDs as readable fields (FK fields themselves are write-only)
+    influencer_id      = serializers.UUIDField(source='influencer.id', read_only=True)
+    business_id        = serializers.UUIDField(source='business.id',   read_only=True)
     unread_count       = serializers.SerializerMethodField()
     last_message       = serializers.SerializerMethodField()
 
@@ -280,8 +283,8 @@ class ConversationSerializer(serializers.ModelSerializer):
         model  = Conversation
         fields = [
             'id', 'created_at',
-            'business', 'business_name',
-            'influencer', 'influencer_handle',
+            'business', 'business_name', 'business_id',
+            'influencer', 'influencer_handle', 'influencer_id',
             'unread_count', 'last_message',
         ]
         extra_kwargs = {

@@ -86,12 +86,15 @@ function MessagesPage() {
     e.preventDefault();
     if (!contractForm.agreed_price || !contractForm.deliverables.trim()) return;
     const activeConvo = convos.find((c) => c.id === selectedId);
-    if (!activeConvo?.influencer) return;
+    if (!activeConvo?.influencer_id) {
+      alert('Could not find influencer in this conversation. Please try again.');
+      return;
+    }
 
     setProposing(true);
     try {
       await contractApi.create({
-        influencer: activeConvo.influencer,
+        influencer: activeConvo.influencer_id,
         agreed_price: contractForm.agreed_price,
         deliverables: contractForm.deliverables.trim(),
       });
