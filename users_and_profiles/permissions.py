@@ -20,26 +20,26 @@ class IsSuperUser(BasePermission):
 
 
 class IsBusiness(BasePermission):
-    """Allows access only to users with role='business'."""
+    """Allows access only to users with role='business' OR superusers."""
     message = 'Only business accounts can perform this action.'
 
     def has_permission(self, request, view):
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.role == UserRole.BUSINESS
+            (request.user.is_superuser or request.user.role == UserRole.BUSINESS)
         )
 
 
 class IsInfluencer(BasePermission):
-    """Allows access only to users with role='influencer'."""
+    """Allows access only to users with role='influencer' OR superusers."""
     message = 'Only influencer accounts can perform this action.'
 
     def has_permission(self, request, view):
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.role == UserRole.INFLUENCER
+            (request.user.is_superuser or request.user.role == UserRole.INFLUENCER)
         )
 
 
@@ -47,12 +47,15 @@ class IsConversationParticipant(BasePermission):
     """
     Object-level permission.
     Only the business or influencer that is part of the conversation
-    can read or write to it.
+    can read or write to it. Superusers can always access all conversations.
     """
     message = 'You are not a participant in this conversation.'
 
     def has_object_permission(self, request, view, obj):
         user = request.user
+        # Superadmin can access all conversations
+        if user.is_superuser:
+            return True
         # obj is a Conversation instance
         is_business    = (user.role == UserRole.BUSINESS    and
                           obj.business.user == user)
@@ -60,3 +63,4 @@ class IsConversationParticipant(BasePermission):
                           hasattr(user, 'influencer_profile') and
                           obj.influencer == user.influencer_profile)
         return is_business or is_influencer
+
