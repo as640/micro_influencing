@@ -15,6 +15,7 @@ function MyCampaignsPage() {
     const [showForm, setShowForm] = useState(false);
 
     const [form, setForm] = useState({
+        business_id: user?.business_profiles?.[0]?.id || '',
         title: '',
         required_ad_type: 'instagram_reel',
         budget_min: '',
@@ -47,7 +48,7 @@ function MyCampaignsPage() {
         try {
             await campaignApi.create(form);
             setShowForm(false);
-            setForm({ title: '', required_ad_type: 'instagram_reel', budget_min: '', budget_max: '', description: '' });
+            setForm({ business_id: user?.business_profiles?.[0]?.id || '', title: '', required_ad_type: 'instagram_reel', budget_min: '', budget_max: '', description: '' });
             await loadCampaigns(); // refresh list
         } catch (err) {
             console.error('Failed to post campaign', err);
@@ -84,6 +85,17 @@ function MyCampaignsPage() {
                 <form onSubmit={handleSubmit} className="glow-hover rounded-xl border border-indigo-500/30 bg-indigo-950/20 p-6 shadow-lg shadow-indigo-500/10">
                     <h3 className="mb-4 text-lg font-bold text-white">Post a New Opportunity</h3>
                     <div className="grid gap-5 md:grid-cols-2">
+                        {user?.business_profiles?.length > 1 && (
+                            <label className="block md:col-span-2">
+                                <span className="mb-2 block text-sm font-medium text-slate-300">Select Business</span>
+                                <select name="business_id" value={form.business_id} onChange={handleChange} required
+                                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none transition focus:border-indigo-500">
+                                    {user.business_profiles.map(b => (
+                                        <option key={b.id} value={b.id}>{b.company_name} {b.gstin ? '(Verified)' : ''}</option>
+                                    ))}
+                                </select>
+                            </label>
+                        )}
                         <label className="block md:col-span-2">
                             <span className="mb-2 block text-sm font-medium text-slate-300">Campaign Title</span>
                             <input type="text" name="title" value={form.title} onChange={handleChange} required

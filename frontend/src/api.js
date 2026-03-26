@@ -4,7 +4,7 @@
  * Token is read from localStorage and injected into every authenticated request.
  */
 
-const BASE = 'http://localhost:8000/api';
+const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 async function request(method, path, body = null, auth = true) {
@@ -123,4 +123,17 @@ export const paymentApi = {
 export const instagramApi = {
     getAuthUrl: () => request('GET', '/instagram/auth-url/'),
     callback: (code) => request('POST', '/instagram/callback/', { code }),
+};
+
+// ─── Superadmin ───────────────────────────────────────────────────────────────
+export const superadminApi = {
+    getDashboardStats: () => request('GET', '/superadmin/dashboard-stats/'),
+};
+
+// ─── Business / GST ───────────────────────────────────────────────────────────
+export const businessApi = {
+    publicGstRequestOTP: (gstin) => request('POST', '/auth/business/gst-request/', { gstin }, false),
+    gstRequestOTP: (gstin) => request('POST', '/business/gst-request/', { gstin }),
+    gstVerifyOTP: (reference_id, otp, gstin, company_name, industry, locality) => 
+        request('POST', '/business/gst-verify/', { reference_id, otp, gstin, company_name, industry, locality }),
 };

@@ -41,13 +41,16 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
 from .models import InfluencerProfile, BusinessProfile, Campaign, Conversation, Message
-from .permissions import IsBusiness, IsConversationParticipant
+from django.utils import timezone
+from django.db.models import Sum
+from .permissions import IsBusiness, IsConversationParticipant, IsSuperUser
 from .serializers import (
     RegisterSerializer, LoginSerializer, UserMeSerializer,
     InfluencerListSerializer, InfluencerDetailSerializer,
     CampaignSerializer,
     ConversationSerializer, ConversationDetailSerializer, MessageSerializer,
-    InfluencerProfileSerializer, BusinessProfileSerializer
+    InfluencerProfileSerializer, BusinessProfileSerializer,
+    PasswordResetRequestSerializer, PasswordResetConfirmSerializer
 )
 
 
@@ -62,6 +65,48 @@ def _get_tokens_for_user(user):
         'refresh': str(refresh),
         'access':  str(refresh.access_token),
     }
+
+
+# ===========================================================================
+# Superadmin User Dashboard
+# ===========================================================================
+
+class SuperadminDashboardStatsView(APIView):
+    permission_classes = [IsAuthenticated, IsSuperUser]
+    
+    def get(self, request):
+        now = timezone.now()
+        start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        total_businesses = BusinessProfile.objects.count()
+        total_influencers = InfluencerProfile.objects.count()
+        active_campaigns = Campaign.objects.filter(is_active=True).count()
+        
+        # Contracts
+        # Note: Assuming Contract model is already imported properly
+        total_pending_contracts = Contract.objects.filter(status='pending').count()
+        total_active_contracts = Contract.objects.filter(status='active').count()
+        
+        closed_deals_this_month = Contract.objects.filter(
+            status='completed', 
+            updated_at__gte=start_of_month
+        ).count()
+        
+        # Platform value
+        completed_contracts = Contract.objects.filter(status='completed')
+        total_platform_value = completed_contracts.aggregate(
+            total=Sum('agreed_price')
+        )['total'] or 0
+
+        return Response({
+            'total_businesses': total_businesses,
+            'total_influencers': total_influencers,
+            'active_campaigns': active_campaigns,
+            'closed_deals_this_month': closed_deals_this_month,
+            'total_pending_contracts': total_pending_contracts,
+            'total_active_contracts': total_active_contracts,
+            'total_platform_value': float(total_platform_value),
+        }, status=status.HTTP_200_OK)
 
 
 # ===========================================================================
@@ -214,7 +259,16 @@ class CampaignListCreateView(ListCreateAPIView):
         return Campaign.objects.select_related('business').filter(is_active=True)
 
     def perform_create(self, serializer):
-        serializer.save(business=self.request.user.business_profile)
+        business_id = self.request.data.get('business_id')
+        if business_id:
+            from django.shortcuts import get_object_or_404
+            business = get_object_or_404(self.request.user.business_profiles.all(), id=business_id)
+        else:
+            business = self.request.user.business_profiles.first()
+            if not business:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({'business_id': 'You must have a registered business profile to create campaigns.'})
+        serializer.save(business=business)
 
 
 class CampaignDetailView(RetrieveUpdateAPIView):
@@ -257,7 +311,7 @@ class ConversationListCreateView(APIView):
         user = request.user
         if user.role == 'business':
             qs = Conversation.objects.filter(
-                business=user.business_profile
+                business__in=user.business_profiles.all()
             ).prefetch_related('messages__sender').select_related('business', 'influencer')
         else:
             qs = Conversation.objects.filter(
@@ -275,13 +329,19 @@ class ConversationListCreateView(APIView):
         # 1. Business initiating chat with Influencer
         if user.role == 'business':
             influencer_id = request.data.get('influencer_id')
+            business_id = request.data.get('business_id')
             if not influencer_id:
                 return Response(
                     {'error': 'influencer_id is required for a business to start a chat.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             influencer = get_object_or_404(InfluencerProfile, pk=influencer_id)
-            business   = user.business_profile
+            if business_id:
+                business = get_object_or_404(user.business_profiles.all(), pk=business_id)
+            else:
+                business = user.business_profiles.first()
+                if not business:
+                    return Response({'error': 'You have no verified business profiles.'}, status=status.HTTP_400_BAD_REQUEST)
             
         # 2. Influencer initiating chat with Business (Applying for campaign)
         elif user.role == 'influencer':
@@ -423,7 +483,7 @@ class ContractListCreateView(APIView):
     def get(self, request):
         user = request.user
         if user.role == 'business':
-            qs = Contract.objects.filter(business=user.business_profile)
+            qs = Contract.objects.filter(business__in=user.business_profiles.all())
         else:
             qs = Contract.objects.filter(influencer=user.influencer_profile)
 
@@ -438,8 +498,16 @@ class ContractListCreateView(APIView):
             )
 
         data = request.data.copy()
-        # Auto-attach the authenticated business's profile
-        data['business'] = str(request.user.business_profile.id)
+        business_id = request.data.get('business_id')
+        if business_id:
+            business = get_object_or_404(request.user.business_profiles.all(), pk=business_id)
+        else:
+            business = request.user.business_profiles.first()
+            if not business:
+                return Response({'error': 'No verified business found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Auto-attach the authorized business profile
+        data['business'] = str(business.id)
 
         serializer = ContractSerializer(data=data)
         serializer.is_valid(raise_exception=True)
@@ -464,7 +532,7 @@ class ContractDetailView(APIView):
             pk=pk,
         )
         is_party = (
-            (user.role == 'business'   and contract.business   == user.business_profile) or
+            (user.role == 'business'   and contract.business.user == user) or
             (user.role == 'influencer' and contract.influencer == user.influencer_profile)
         )
         if not is_party:
@@ -515,7 +583,7 @@ class ContractStatusView(APIView):
         user = request.user
 
         # Verify the user is a party to this contract
-        is_business    = (user.role == 'business'   and contract.business   == user.business_profile)
+        is_business    = (user.role == 'business'   and contract.business.user == user)
         is_influencer  = (user.role == 'influencer' and contract.influencer == user.influencer_profile)
         if not (is_business or is_influencer):
             return Response(
@@ -587,7 +655,7 @@ class ContractPaymentCreateView(APIView):
         contract = get_object_or_404(
             Contract.objects.select_related('business'),
             pk=pk,
-            business=user.business_profile
+            business__user=user
         )
 
         if contract.status != ContractStatus.ACTIVE:
@@ -753,6 +821,176 @@ class InstagramCallbackView(APIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        return Response(InfluencerDetailSerializer(profile).data, status=status.HTTP_200_OK)
+
+
+        # Return the updated profile
+        from .serializers import InfluencerDetailSerializer
+        profile.refresh_from_db()
+        return Response(InfluencerDetailSerializer(profile).data, status=status.HTTP_200_OK)
+
+
+# ===========================================================================
+# Password Reset Views
+# ===========================================================================
+from django.core.mail import send_mail
+from django.conf import settings
+from .models import PasswordResetOTP, CustomUser
+import random
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email']
+        
+        user = CustomUser.objects.get(email=email)
+        
+        # Invalidate old OTPs for this user
+        PasswordResetOTP.objects.filter(user=user, is_used=False).update(is_used=True)
+        
+        # Generate 6 digit OTP
+        otp_code = f"{random.randint(100000, 999999)}"
+        PasswordResetOTP.objects.create(user=user, otp=otp_code)
+        
+        # Send email
+        send_mail(
+            subject="Microfluence Password Reset OTP",
+            message=f"Your OTP for password reset is: {otp_code}\nThis OTP is valid for 10 minutes.",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+        
+        return Response({"message": "OTP sent to your email."}, status=status.HTTP_200_OK)
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        email = serializer.validated_data['email']
+        otp_code = serializer.validated_data['otp']
+        new_password = serializer.validated_data['new_password']
+        
+        user = get_object_or_404(CustomUser, email=email)
+        
+        # Find latest OTP matching user and code
+        otp_obj = PasswordResetOTP.objects.filter(user=user, otp=otp_code).order_by('-created_at').first()
+        
+        if not otp_obj or not otp_obj.is_valid():
+            return Response({"error": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Reset password
+        user.set_password(new_password)
+        user.save()
+        
+        # Mark OTP as used
+        otp_obj.is_used = True
+        otp_obj.save()
+        
+        return Response({"message": "Password reset successful."}, status=status.HTTP_200_OK)
+
+
+# ===========================================================================
+# Setu GST Add / Verify Views
+# ===========================================================================
+from . import setu_service
+
+class PublicBusinessGSTRequestOTPView(APIView):
+    """
+    POST /api/auth/business/gst-request/
+    Allows unauthenticated users during registration to request a GST OTP.
+    """
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        gstin = request.data.get('gstin')
+        if not gstin:
+            return Response({'error': 'GSTIN is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            ref_id = setu_service.request_gst_otp(gstin)
+            return Response({'reference_id': ref_id, 'message': 'OTP sent successfully.'}, status=status.HTTP_200_OK)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class BusinessGSTRequestOTPView(APIView):
+    """
+    POST /api/business/gst-request/
+    Body: {"gstin": "07AAAAA0000A1Z5"}
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        if request.user.role != 'business':
+            return Response({'error': 'Only business accounts can verify GST.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        gstin = request.data.get('gstin')
+        if not gstin:
+            return Response({'error': 'GSTIN is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            ref_id = setu_service.request_gst_otp(gstin)
+            return Response({'reference_id': ref_id, 'message': 'OTP sent successfully.'}, status=status.HTTP_200_OK)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class BusinessGSTVerifyOTPView(APIView):
+    """
+    POST /api/business/gst-verify/
+    Verifies the OTP and spawns a new verified BusinessProfile linked to the user.
+    Body: {"reference_id": "uuid", "otp": "123456", "gstin": "07AAAAA0000A1Z5", "company_name": "My Agency", "industry": "Marketing"}
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        if request.user.role != 'business':
+            return Response({'error': 'Only business accounts can verify GST.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        reference_id = request.data.get('reference_id')
+        otp = request.data.get('otp')
+        gstin = request.data.get('gstin')
+        
+        if not all([reference_id, otp, gstin]):
+            return Response({'error': 'reference_id, otp, and gstin are required.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Ensure this GST is not already in use
+        if BusinessProfile.objects.filter(gstin=gstin, is_verified=True).exists():
+            return Response({'error': 'This GSTIN has already been verified on the platform.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            gst_data = setu_service.verify_gst_otp(reference_id, otp, gstin)
+            legal_name = gst_data.get('legalName', 'Verified Business')
+            trade_name = gst_data.get('tradeName', legal_name)
+            
+            company_name = request.data.get('company_name') or trade_name
+            industry = request.data.get('industry', 'Other')
+            locality = request.data.get('locality', '')
+            
+            business = BusinessProfile.objects.create(
+                user=request.user,
+                company_name=company_name,
+                industry=industry,
+                locality=locality,
+                gstin=gstin,
+                legal_name=legal_name,
+                is_verified=True
+            )
+            
+            return Response(
+                BusinessProfileSerializer(business).data, 
+                status=status.HTTP_201_CREATED
+            )
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Return the updated profile
         from .serializers import InfluencerDetailSerializer

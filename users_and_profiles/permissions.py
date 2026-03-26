@@ -7,6 +7,18 @@ from rest_framework.permissions import BasePermission
 from .models import UserRole
 
 
+class IsSuperUser(BasePermission):
+    """Allows access only to superusers."""
+    message = 'Only superusers can perform this action.'
+
+    def has_permission(self, request, view):
+        return (
+            request.user and
+            request.user.is_authenticated and
+            request.user.is_superuser
+        )
+
+
 class IsBusiness(BasePermission):
     """Allows access only to users with role='business'."""
     message = 'Only business accounts can perform this action.'
@@ -43,8 +55,7 @@ class IsConversationParticipant(BasePermission):
         user = request.user
         # obj is a Conversation instance
         is_business    = (user.role == UserRole.BUSINESS    and
-                          hasattr(user, 'business_profile') and
-                          obj.business == user.business_profile)
+                          obj.business.user == user)
         is_influencer  = (user.role == UserRole.INFLUENCER  and
                           hasattr(user, 'influencer_profile') and
                           obj.influencer == user.influencer_profile)

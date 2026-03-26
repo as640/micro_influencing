@@ -145,9 +145,10 @@ class InfluencerProfile(models.Model):
     follower_age_ratio = models.JSONField(
         default=dict,
         blank=True,
+        null=True,
         help_text='e.g., {"13-17": 5, "18-24": 45, "25-34": 30}' # Added age ratio
     )
-    top_audience_locality = models.CharField(max_length=255, blank=True)
+    top_audience_locality = models.CharField(max_length=255, blank=True, null=True)
 
     # Pricing
     price_min            = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
@@ -183,16 +184,24 @@ class InfluencerProfile(models.Model):
 
 class BusinessProfile(models.Model):
     id           = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user         = models.OneToOneField(
+    user         = models.ForeignKey(
                        CustomUser,
                        on_delete=models.CASCADE,
-                       related_name='business_profile',
+                       related_name='business_profiles',
                        db_column='user_id',
                    )
     company_name = models.CharField(max_length=255)
     industry     = models.CharField(max_length=100)    # e.g. 'Gym'
     locality     = models.CharField(max_length=100, blank=True, null=True)
     website_url  = models.CharField(max_length=255, blank=True, null=True)
+    
+    # -----------------------------------------------------------------------
+    # Setu GST Verification Fields
+    # -----------------------------------------------------------------------
+    gstin        = models.CharField(max_length=15, blank=True, null=True, unique=True, help_text="15-digit GST Number")
+    legal_name   = models.CharField(max_length=255, blank=True, null=True, help_text="Legal Entity Name retrieved from GSTN")
+    is_verified  = models.BooleanField(default=False)
+    
     updated_at   = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -351,3 +360,28 @@ class Contract(models.Model):
             f'Contract #{self.id} | {self.business.company_name} ↔ '
             f'@{self.influencer.instagram_handle} [{self.status}]'
         )
+
+# ---------------------------------------------------------------------------
+# 8. Password Reset OTP
+# ---------------------------------------------------------------------------
+
+class PasswordResetOTP(models.Model):
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user       = models.ForeignKey(
+                     CustomUser,
+                     on_delete=models.CASCADE,
+                     related_name='password_reset_otps'
+                 )
+    otp        = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_used    = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'password_reset_otps'
+        ordering = ['-created_at']
+
+    def is_valid(self):
+        from datetime import timedelta
+        from django.utils.timezone import now
+        # Valid for 10 minutes
+        return not self.is_used and (now() - self.created_at) < timedelta(minutes=10)

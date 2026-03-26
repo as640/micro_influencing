@@ -13,6 +13,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     # Auth
     RegisterView, LoginView, LogoutView, MeView,
+    PasswordResetRequestView, PasswordResetConfirmView,
     # Discovery
     InfluencerListView, InfluencerDetailView,
     CampaignListCreateView, CampaignDetailView,
@@ -25,16 +26,30 @@ from .views import (
     ContractPaymentCreateView, ContractPaymentVerifyView,
     # Instagram OAuth
     InstagramAuthURLView, InstagramCallbackView,
+    # Superadmin
+    SuperadminDashboardStatsView,
+    # GST / Setu
+    PublicBusinessGSTRequestOTPView, BusinessGSTRequestOTPView, BusinessGSTVerifyOTPView
 )
 
 urlpatterns = [
+
+    # ── Superadmin ───────────────────────────────────────────
+    path('superadmin/dashboard-stats/', SuperadminDashboardStatsView.as_view(), name='superadmin-dashboard-stats'),
 
     # ── Auth ─────────────────────────────────────────────────
     path('auth/register/',      RegisterView.as_view(),      name='auth-register'),
     path('auth/login/',         LoginView.as_view(),         name='auth-login'),
     path('auth/logout/',        LogoutView.as_view(),        name='auth-logout'),
     path('auth/me/',            MeView.as_view(),            name='auth-me'),
+    path('auth/business/gst-request/', PublicBusinessGSTRequestOTPView.as_view(), name='public-gst-request'),
     path('auth/token/refresh/', TokenRefreshView.as_view(),  name='token-refresh'),
+    path('auth/password-reset/', PasswordResetRequestView.as_view(), name='password-reset-request'),
+    path('auth/password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
+
+    # ── Business Entities (GST) ──────────────────────────────
+    path('business/gst-request/', BusinessGSTRequestOTPView.as_view(), name='business-gst-request'),
+    path('business/gst-verify/',  BusinessGSTVerifyOTPView.as_view(),  name='business-gst-verify'),
 
     # ── Influencers ───────────────────────────────────────────
     path('influencers/',           InfluencerListView.as_view(),   name='influencer-list'),

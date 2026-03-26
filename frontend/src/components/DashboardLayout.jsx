@@ -3,12 +3,13 @@ import BrandLogo from './BrandLogo';
 import { useAuth } from '../context/AuthContext';
 
 // Base items for both roles
-const getNavItems = (role) => {
+const getNavItems = (role, isSuperUser) => {
   const items = [
     { to: '/dashboard/home', label: '🏠  Home' },
   ];
 
   if (role === 'business') {
+    items.push({ to: '/dashboard/businesses', label: '🏢  My Businesses' });
     items.push({ to: '/dashboard/find-influencers', label: '🔍  Find Influencers' });
     items.push({ to: '/dashboard/my-campaigns', label: '📢  My Campaigns' });
   } else {
@@ -21,6 +22,10 @@ const getNavItems = (role) => {
     { to: '/dashboard/orders', label: '💰  Earnings' },
     { to: '/dashboard/messages', label: '💬  Messages' }
   );
+
+  if (isSuperUser) {
+    items.push({ to: '/dashboard/superadmin', label: '👑  Superadmin' });
+  }
 
   return items;
 };
@@ -58,7 +63,7 @@ function DashboardLayout() {
         </div>
 
         <nav className="flex-1 space-y-1 px-4">
-          {getNavItems(user.role).map((item) => (
+          {getNavItems(user.role, user.is_superuser).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

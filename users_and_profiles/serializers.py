@@ -49,6 +49,9 @@ class RegisterSerializer(serializers.ModelSerializer):
     # Business-specific
     company_name     = serializers.CharField(max_length=255, required=False)
     industry         = serializers.CharField(max_length=100,  required=False)
+    gstin            = serializers.CharField(max_length=15, required=False)
+    reference_id     = serializers.CharField(required=False)
+    otp              = serializers.CharField(max_length=6, required=False)
 
     class Meta:
         model  = CustomUser
@@ -56,7 +59,7 @@ class RegisterSerializer(serializers.ModelSerializer):
                   # influencer
                   'instagram_handle', 'category', 'locality',
                   # business
-                  'company_name', 'industry']
+                  'company_name', 'industry', 'gstin', 'reference_id', 'otp']
 
     def validate(self, attrs):
         role = attrs.get('role')
@@ -69,22 +72,41 @@ class RegisterSerializer(serializers.ModelSerializer):
                     )
 
         elif role == UserRole.BUSINESS:
-            for field in ['company_name', 'industry']:
+            for field in ['gstin', 'reference_id', 'otp']:
                 if not attrs.get(field):
                     raise serializers.ValidationError(
-                        {field: f'Required for businesses.'}
+                        {field: f'GST verification required for business registration.'}
                     )
+            
+            # Execute synchronous GST Auth call to block unauthorized CustomUser creations
+            from . import setu_service
+            try:
+                gst_data = setu_service.verify_gst_otp(
+                    reference_id=attrs['reference_id'],
+                    otp=attrs['otp'],
+                    gstin=attrs['gstin']
+                )
+                # Pass legal_name down to create()
+                attrs['legal_name'] = gst_data.get('legalName', 'Verified Business')
+            except ValueError as e:
+                raise serializers.ValidationError({'otp': str(e)})
 
         return attrs
 
     @transaction.atomic
     def create(self, validated_data):
+        # Prevent temporary state bugs
+        legal_name       = validated_data.pop('legal_name', None)
+        gstin            = validated_data.pop('gstin', None)
+        validated_data.pop('reference_id', None)
+        validated_data.pop('otp', None)
+        
         # Pop profile fields before creating the user
         instagram_handle = validated_data.pop('instagram_handle', None)
         category         = validated_data.pop('category', None)
-        locality         = validated_data.pop('locality', None)
+        locality         = validated_data.pop('locality', '')
         company_name     = validated_data.pop('company_name', None)
-        industry         = validated_data.pop('industry', None)
+        industry         = validated_data.pop('industry', 'Other')
 
         password = validated_data.pop('password')
         user     = CustomUser(**validated_data)
@@ -101,8 +123,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         elif user.role == UserRole.BUSINESS:
             BusinessProfile.objects.create(
                 user=user,
-                company_name=company_name,
+                company_name=company_name or legal_name,
                 industry=industry,
+                locality=locality,
+                gstin=gstin,
+                legal_name=legal_name,
+                is_verified=True
             )
 
         return user
@@ -149,12 +175,12 @@ class BusinessProfileSerializer(serializers.ModelSerializer):
 class UserMeSerializer(serializers.ModelSerializer):
     """Returns the current authenticated user + their profile."""
     influencer_profile = InfluencerProfileSerializer(read_only=True)
-    business_profile   = BusinessProfileSerializer(read_only=True)
+    business_profiles  = BusinessProfileSerializer(many=True, read_only=True)
 
     class Meta:
         model  = CustomUser
-        fields = ['id', 'email', 'role', 'created_at',
-                  'influencer_profile', 'business_profile']
+        fields = ['id', 'email', 'role', 'created_at', 'is_superuser',
+                  'influencer_profile', 'business_profiles']
 
 
 # ---------------------------------------------------------------------------
@@ -359,3 +385,20 @@ class ContractSerializer(serializers.ModelSerializer):
             'payment_intent_id': {'required': False},
             'status':            {'required': False},
         }
+
+# ---------------------------------------------------------------------------
+# Password Reset
+# ---------------------------------------------------------------------------
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        if not CustomUser.objects.filter(email=value).exists():
+            raise serializers.ValidationError("No user found with this email.")
+        return value
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=6)
+    new_password = serializers.CharField(write_only=True, min_length=8)

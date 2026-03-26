@@ -16,6 +16,10 @@ import FindInfluencersPage from './pages/FindInfluencersPage';
 import MyCampaignsPage from './pages/MyCampaignsPage';
 import FindCampaignsPage from './pages/FindCampaignsPage';
 import InstagramCallbackPage from './pages/InstagramCallbackPage';
+import SuperadminDashboardPage from './pages/SuperadminDashboardPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import MyBusinessesPage from './pages/MyBusinessesPage';
 
 function App() {
   return (
@@ -23,6 +27,8 @@ function App() {
       <Route path="/" element={<BrandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route
         path="/our-work"
@@ -52,12 +58,14 @@ function App() {
         <Route index element={<Navigate to="home" replace />} />
         <Route path="home" element={<HomePage />} />
         <Route path="account" element={<AccountInfoPage />} />
+        <Route path="businesses" element={<MyBusinessesPage />} />
         <Route path="orders" element={<OrdersEarningsPage />} />
         <Route path="pending-orders" element={<PendingOrdersPage />} />
         <Route path="messages" element={<MessagesPage />} />
         <Route path="find-influencers" element={<FindInfluencersPage />} />
         <Route path="my-campaigns" element={<MyCampaignsPage />} />
         <Route path="find-campaigns" element={<FindCampaignsPage />} />
+        <Route path="superadmin" element={<SuperadminDashboardPage />} />
       </Route>
 
       {/* Verification Engine OAuth Callback */}

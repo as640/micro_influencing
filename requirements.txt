@@ -6,3 +6,6 @@ psycopg2-binary>=2.9
 python-decouple>=3.8
 requests>=2.28
 razorpay>=1.4
+gunicorn>=21.2
+whitenoise>=6.5
+dj-database-url>=2.1

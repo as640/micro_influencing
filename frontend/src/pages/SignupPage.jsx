@@ -1,19 +1,40 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import BrandLogo from '../components/BrandLogo';
-import { authApi, saveTokens } from '../api';
+import { authApi, saveTokens, businessApi } from '../api';
 
 function SignupPage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ email: '', password: '', role: 'influencer', instagram_handle: '', company_name: '', category: 'lifestyle', locality: '', industry: 'tech' });
+  const [form, setForm] = useState({ email: '', password: '', role: 'influencer', instagram_handle: '', company_name: '', category: 'lifestyle', locality: '', industry: 'tech', gstin: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // Setu GST Flow variables
+  const [step, setStep] = useState(1);
+  const [otp, setOtp] = useState('');
+  const [referenceId, setReferenceId] = useState('');
 
   const handleChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    
+    // Step 1: Check if Business needs to request OTP
+    if (form.role === 'business' && step === 1) {
+      setLoading(true);
+      try {
+        const res = await businessApi.publicGstRequestOTP(form.gstin);
+        setReferenceId(res.reference_id);
+        setStep(2); // Jump to OTP entry
+      } catch (err) {
+        setError(err.error || 'Failed to request OTP for this GSTIN.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     setLoading(true);
 
     // Build payload based on role
@@ -23,7 +44,7 @@ function SignupPage() {
       role: form.role,
       ...(form.role === 'influencer'
         ? { instagram_handle: form.instagram_handle, category: form.category, locality: form.locality }
-        : { company_name: form.company_name, industry: form.industry, locality: form.locality }
+        : { company_name: form.company_name, industry: form.industry, locality: form.locality, gstin: form.gstin, reference_id: referenceId, otp: otp }
       ),
     };
 
@@ -115,15 +136,20 @@ function SignupPage() {
           ) : (
             <>
               <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-300">Company Name</span>
+                <span className="mb-2 block text-sm font-medium text-slate-300">15-Digit GST Number</span>
                 <input className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none ring-indigo-500 transition focus:border-indigo-500 focus:ring-2"
-                  type="text" name="company_name" value={form.company_name} onChange={handleChange} placeholder="Your company" required />
+                  type="text" name="gstin" value={form.gstin} onChange={handleChange} placeholder="07AAAAA0000A1Z5" maxLength={15} required />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-300">Brand / Display Name</span>
+                <input className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none ring-indigo-500 transition focus:border-indigo-500 focus:ring-2"
+                  type="text" name="company_name" value={form.company_name} onChange={handleChange} placeholder="Optional (Will use Legal Name)" />
               </label>
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-300">Industry</span>
                 <select className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none transition focus:border-indigo-500"
                   name="industry" value={form.industry} onChange={handleChange}>
-                  {['tech', 'fitness', 'skincare', 'clothing', 'finance', 'other'].map((c) => (
+                  {['tech', 'marketing', 'fitness', 'skincare', 'clothing', 'finance', 'other'].map((c) => (
                     <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
                   ))}
                 </select>
@@ -131,16 +157,28 @@ function SignupPage() {
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-300">City / Locality</span>
                 <input className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none ring-indigo-500 transition focus:border-indigo-500 focus:ring-2"
-                  type="text" name="locality" value={form.locality} onChange={handleChange} placeholder="e.g. Delhi" required />
+                  type="text" name="locality" value={form.locality} onChange={handleChange} placeholder="e.g. Delhi" />
               </label>
             </>
+          )}
+
+          {step === 2 && (
+            <div className="rounded-xl border border-indigo-500/30 bg-indigo-900/20 p-4 shadow-inner mb-4">
+              <p className="text-sm text-slate-300 mb-3">Please verify the OTP sent to your GST registered phone/email to complete account creation.</p>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-300">6-Digit OTP</span>
+                <input className="w-full tracking-[0.3em] font-mono text-center rounded-lg border border-slate-700 bg-slate-800 px-4 py-3 text-xl text-slate-100 focus:border-indigo-500"
+                  type="text" name="otp" value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="123456" maxLength={6} required />
+              </label>
+              <button type="button" onClick={() => setStep(1)} className="mt-3 text-sm text-indigo-400 hover:text-white">← Edit Registration Details</button>
+            </div>
           )}
 
           <button
             className="glow-hover w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-60"
             type="submit" disabled={loading}
           >
-            {loading ? 'Creating account...' : 'Sign up'}
+            {loading ? 'Processing...' : (form.role === 'business' && step === 1 ? 'Verify GST & Register' : 'Complete Registration')}
           </button>
         </form>
 
