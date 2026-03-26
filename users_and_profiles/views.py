@@ -225,6 +225,15 @@ class InfluencerDetailView(RetrieveAPIView):
         return InfluencerProfile.objects.select_related('user').filter(user__is_active=True)
 
 
+class BusinessListView(ListAPIView):
+    """GET /api/businesses/ — returns all business profiles (for superadmin dropdown)."""
+    permission_classes = [IsAuthenticated]
+    serializer_class   = BusinessProfileSerializer
+
+    def get_queryset(self):
+        return BusinessProfile.objects.select_related('user').all()
+
+
 # ===========================================================================
 # Discovery — Campaign Filters & Views
 # ===========================================================================
