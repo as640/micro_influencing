@@ -29,7 +29,9 @@ from .views import (
     # Superadmin
     SuperadminDashboardStatsView,
     # GST / Setu
-    PublicBusinessGSTRequestOTPView, BusinessGSTRequestOTPView, BusinessGSTVerifyOTPView
+    PublicBusinessGSTRequestOTPView, BusinessGSTRequestOTPView, BusinessGSTVerifyOTPView,
+    # Admin helpers
+    BusinessListView,
 )
 
 urlpatterns = [
@@ -54,6 +56,9 @@ urlpatterns = [
     # ── Influencers ───────────────────────────────────────────
     path('influencers/',           InfluencerListView.as_view(),   name='influencer-list'),
     path('influencers/<uuid:pk>/', InfluencerDetailView.as_view(), name='influencer-detail'),
+
+    # ── All Businesses (superadmin) ───────────────────────────
+    path('businesses/', BusinessListView.as_view(), name='business-list'),
 
     # ── Campaigns ────────────────────────────────────────────
     path('campaigns/',           CampaignListCreateView.as_view(), name='campaign-list-create'),

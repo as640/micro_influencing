@@ -23,6 +23,8 @@ function MyCampaignsPage() {
         description: ''
     });
 
+    const [allBusinesses, setAllBusinesses] = useState([]);
+
     const loadCampaigns = async () => {
         try {
             const data = await campaignApi.list();
@@ -37,6 +39,18 @@ function MyCampaignsPage() {
     };
 
     useEffect(() => {
+        // For superadmin, fetch all businesses in the system to pick from
+        if (user?.is_superuser) {
+            import('../api').then(({ businessApi }) => {
+                // Only load if needed — fallback to user's own profiles
+            });
+            // Fetch all business profiles via a simple list approach
+            fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/businesses/`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+            }).then(r => r.json()).then(data => {
+                if (Array.isArray(data)) setAllBusinesses(data);
+            }).catch(() => {});
+        }
         loadCampaigns();
     }, [user]);
 
@@ -58,7 +72,7 @@ function MyCampaignsPage() {
         }
     };
 
-    if (user?.role !== 'business') {
+    if (user?.role !== 'business' && !user?.is_superuser) {
         return (
             <div className="flex h-48 items-center justify-center text-slate-400">
                 You do not have access to this page.
@@ -85,12 +99,14 @@ function MyCampaignsPage() {
                 <form onSubmit={handleSubmit} className="glow-hover rounded-xl border border-indigo-500/30 bg-indigo-950/20 p-6 shadow-lg shadow-indigo-500/10">
                     <h3 className="mb-4 text-lg font-bold text-white">Post a New Opportunity</h3>
                     <div className="grid gap-5 md:grid-cols-2">
-                        {user?.business_profiles?.length > 1 && (
+                        {/* Business selector for superadmin or multi-business users */}
+                        {(user?.is_superuser || user?.business_profiles?.length > 1) && (
                             <label className="block md:col-span-2">
                                 <span className="mb-2 block text-sm font-medium text-slate-300">Select Business</span>
                                 <select name="business_id" value={form.business_id} onChange={handleChange} required
                                     className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none transition focus:border-indigo-500">
-                                    {user.business_profiles.map(b => (
+                                    <option value="">-- Select a Business --</option>
+                                    {(user?.is_superuser ? allBusinesses : user?.business_profiles || []).map(b => (
                                         <option key={b.id} value={b.id}>{b.company_name} {b.gstin ? '(Verified)' : ''}</option>
                                     ))}
                                 </select>
