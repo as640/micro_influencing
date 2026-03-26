@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { contractApi, conversationApi } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -13,6 +13,7 @@ function MessagesPage() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const bottomRef = useRef(null);
+  const pollingRef = useRef(null);
 
   // Contract proposal modal state
   const [showContractModal, setShowContractModal] = useState(false);
@@ -21,30 +22,49 @@ function MessagesPage() {
   const [contractSuccess, setContractSuccess] = useState(false);
 
   // Load conversation list
-  useEffect(() => {
+  const loadConvos = useCallback(() => {
     conversationApi.list()
       .then((data) => {
         setConvos(data);
-        if (data.length > 0) setSelectedId(data[0].id);
+        if (data.length > 0 && !selectedId) setSelectedId(data[0].id);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+  }, [selectedId]);
+
+  useEffect(() => {
+    loadConvos();
   }, []);
 
-  // Load thread when selected conversation changes
+  // Load thread + start live polling when conversation is selected
+  const loadThread = useCallback((id) => {
+    if (!id) return;
+    conversationApi.detail(id)
+      .then((data) => {
+        setThread(data);
+        conversationApi.markRead(id).catch(() => {});
+      })
+      .catch(console.error);
+  }, []);
+
   useEffect(() => {
     if (!selectedId) return;
     setThread(null);
     setContractSuccess(false);
-    conversationApi.detail(selectedId)
-      .then((data) => { setThread(data); conversationApi.markRead(selectedId).catch(() => { }); })
-      .catch(console.error);
+    loadThread(selectedId);
+
+    // Start live polling every 3 seconds
+    pollingRef.current = setInterval(() => {
+      loadThread(selectedId);
+    }, 3000);
+
+    return () => clearInterval(pollingRef.current);
   }, [selectedId]);
 
-  // Auto-scroll to latest message
+  // Auto-scroll to latest message whenever messages update
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [thread?.messages]);
+  }, [thread?.messages?.length]);
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -53,8 +73,7 @@ function MessagesPage() {
     try {
       await conversationApi.sendMsg(selectedId, draft.trim());
       setDraft('');
-      const updated = await conversationApi.detail(selectedId);
-      setThread(updated);
+      loadThread(selectedId); // instantly refresh after sending
     } catch (err) {
       console.error(err);
     } finally {
@@ -62,18 +81,27 @@ function MessagesPage() {
     }
   };
 
+  // Handle Enter key to send (Shift+Enter for new line)
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend(e);
+    }
+  };
+
   // Determine the other party's display name in a conversation
   const getOtherParty = (convo) => {
     if (!convo || !user) return 'Unknown';
-    if (user.role === 'business') {
+    if (user.role === 'business' || user.is_superuser) {
       return convo.influencer_handle ? `@${convo.influencer_handle}` : 'Influencer';
     }
     return convo.business_name || 'Business';
   };
 
-  const getLastMessage = (convo) => {
-    const msgs = convo.messages || [];
-    return msgs.length > 0 ? msgs[msgs.length - 1].content : 'No messages yet';
+  const getLastMessageText = (convo) => {
+    // The list endpoint returns `last_message` as an object with `content`
+    if (convo.last_message?.content) return convo.last_message.content;
+    return 'No messages yet';
   };
 
   const formatTime = (iso) => {
@@ -118,19 +146,20 @@ function MessagesPage() {
   }
 
   const activeConvo = convos.find((c) => c.id === selectedId);
-  const isBusiness = user?.role === 'business';
+  const isBusiness = user?.role === 'business' || user?.is_superuser;
 
   return (
-    <section className="h-[calc(100vh-9rem)] min-h-[560px] rounded-2xl border border-slate-800 bg-slate-900 shadow-sm animate-fade-up">
-      <div className="grid h-full md:grid-cols-[290px_1fr]">
+    // Use fixed height capped to the viewport so chat scrolls inside, not the page
+    <section className="flex flex-col rounded-2xl border border-slate-800 bg-slate-900 shadow-sm animate-fade-up overflow-hidden" style={{ height: 'calc(100vh - 9rem)', minHeight: '560px' }}>
+      <div className="grid h-full overflow-hidden md:grid-cols-[290px_1fr]">
         {/* Sidebar */}
-        <aside className="border-b border-slate-800 bg-slate-950/70 md:border-b-0 md:border-r md:border-slate-800">
-          <div className="border-b border-slate-800 px-4 py-4">
+        <aside className="flex flex-col border-b border-slate-800 bg-slate-950/70 md:border-b-0 md:border-r md:border-slate-800 overflow-hidden">
+          <div className="shrink-0 border-b border-slate-800 px-4 py-4">
             <h2 className="text-lg font-semibold text-white">Messages</h2>
             <p className="text-sm text-slate-400">{convos.length} active thread{convos.length !== 1 ? 's' : ''}</p>
           </div>
 
-          <div className="max-h-[260px] overflow-y-auto md:max-h-[calc(100vh-15rem)]">
+          <div className="flex-1 overflow-y-auto">
             {convos.length === 0 ? (
               <p className="px-4 py-6 text-sm text-slate-500">No conversations yet.</p>
             ) : (
@@ -142,8 +171,13 @@ function MessagesPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <p className="font-semibold text-white">{getOtherParty(convo)}</p>
+                      {convo.unread_count > 0 && (
+                        <span className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-bold text-white">
+                          {convo.unread_count}
+                        </span>
+                      )}
                     </div>
-                    <p className="mt-1 truncate text-sm text-slate-400">{getLastMessage(convo)}</p>
+                    <p className="mt-1 truncate text-sm text-slate-400">{getLastMessageText(convo)}</p>
                   </button>
                 );
               })
@@ -152,14 +186,14 @@ function MessagesPage() {
         </aside>
 
         {/* Chat panel */}
-        <div className="flex h-full flex-col">
+        <div className="flex h-full flex-col overflow-hidden">
           {activeConvo ? (
             <>
               {/* Chat Header */}
-              <header className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
+              <header className="shrink-0 flex items-center justify-between border-b border-slate-800 px-5 py-3">
                 <div>
                   <p className="text-base font-semibold text-white">{getOtherParty(activeConvo)}</p>
-                  <p className="text-xs text-slate-500">Conversation</p>
+                  <p className="text-xs text-slate-500">Conversation · <span className="text-emerald-400">● Live</span></p>
                 </div>
                 <div className="flex items-center gap-2">
                   {/* Contract Success Badge */}
@@ -168,7 +202,7 @@ function MessagesPage() {
                       ✓ Contract Proposed
                     </span>
                   )}
-                  {/* "Propose Contract" button — only for businesses */}
+                  {/* "Propose Contract" button — only for businesses + superadmin */}
                   {isBusiness && (
                     <button
                       onClick={() => setShowContractModal(true)}
@@ -181,7 +215,7 @@ function MessagesPage() {
                   {!isBusiness && (
                     <button
                       onClick={() => navigate('/dashboard/pending-orders')}
-                      className="rounded-lg border border-slateald-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700"
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700"
                     >
                       View Contract Offers
                     </button>
@@ -189,8 +223,8 @@ function MessagesPage() {
                 </div>
               </header>
 
-              {/* Messages */}
-              <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+              {/* Messages — this must flex-1 and overflow-y-auto to scroll properly */}
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
                 {thread === null ? (
                   <p className="text-center text-sm text-slate-500">Loading…</p>
                 ) : thread.messages?.length === 0 ? (
@@ -199,8 +233,7 @@ function MessagesPage() {
                   thread.messages?.map((msg, i) => {
                     const isMe = msg.sender_email === user?.email;
                     return (
-                      <div key={msg.id} className={`animate-fade-up flex ${isMe ? 'justify-end' : 'justify-start'}`}
-                        style={{ animationDelay: `${i * 40}ms` }}>
+                      <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm md:max-w-[70%] ${isMe ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30'
                           : 'border border-slate-700 bg-slate-800 text-slate-100'}`}>
                           <p>{msg.content}</p>
@@ -212,15 +245,20 @@ function MessagesPage() {
                     );
                   })
                 )}
+                {/* Scroll anchor — always at the bottom */}
                 <div ref={bottomRef} />
               </div>
 
               {/* Message input */}
-              <form className="border-t border-slate-800 p-4" onSubmit={handleSend}>
+              <form className="shrink-0 border-t border-slate-800 p-4" onSubmit={handleSend}>
                 <div className="flex gap-2">
-                  <input value={draft} onChange={(e) => setDraft(e.target.value)}
-                    placeholder="Type a message…"
-                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/40"
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
+                    rows={1}
+                    className="w-full resize-none rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/40"
                   />
                   <button type="submit" disabled={sending || !draft.trim()}
                     className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50">
@@ -255,7 +293,6 @@ function MessagesPage() {
             </div>
 
             <form onSubmit={handleProposeContract} className="space-y-4">
-              {/* Agreed Price */}
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium text-slate-400 uppercase tracking-wide">
                   Agreed Price (₹) <span className="text-red-400">*</span>
@@ -271,7 +308,6 @@ function MessagesPage() {
                 />
               </label>
 
-              {/* Deliverables */}
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium text-slate-400 uppercase tracking-wide">
                   Deliverables <span className="text-red-400">*</span>
@@ -286,12 +322,10 @@ function MessagesPage() {
                 />
               </label>
 
-              {/* Info note */}
               <div className="rounded-lg bg-indigo-600/10 border border-indigo-700/30 px-4 py-3 text-sm text-indigo-300">
                 💡 After you submit, the influencer will see this offer in their <strong>Pending Orders</strong> page and can accept or decline.
               </div>
 
-              {/* Actions */}
               <div className="flex gap-3 border-t border-slate-800 pt-4">
                 <button type="button" onClick={() => setShowContractModal(false)}
                   className="flex-1 rounded-lg border border-slate-700 bg-slate-800 py-2.5 font-semibold text-slate-300 transition hover:bg-slate-700">

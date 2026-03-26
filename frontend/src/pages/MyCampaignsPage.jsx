@@ -28,8 +28,15 @@ function MyCampaignsPage() {
     const loadCampaigns = async () => {
         try {
             const data = await campaignApi.list();
-            // Filter campaigns belonging ONLY to this business
-            const myAds = data.filter(c => c.business_info?.id === user?.business_profile?.id);
+            let myAds;
+            if (user?.is_superuser) {
+                // Superadmin sees all campaigns
+                myAds = data;
+            } else {
+                // Match against the user's array of business profile IDs
+                const myBizIds = new Set((user?.business_profiles || []).map(b => b.id));
+                myAds = data.filter(c => myBizIds.has(c.business_info?.id));
+            }
             setCampaigns(myAds);
         } catch (err) {
             console.error('Failed to load campaigns', err);
