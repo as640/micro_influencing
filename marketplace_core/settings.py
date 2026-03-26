@@ -214,3 +214,5 @@ else:
         CORS_ALLOWED_ORIGINS = _cors_origins.split(',')
 
 CORS_ALLOW_CREDENTIALS = True
+\n# Email Backend Fallback
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
