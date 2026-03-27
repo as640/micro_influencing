@@ -139,3 +139,12 @@ export const businessApi = {
     gstVerifyOTP: (reference_id, otp, gstin, company_name, industry, locality) => 
         request('POST', '/business/gst-verify/', { reference_id, otp, gstin, company_name, industry, locality }),
 };
+
+// ─── Disputes ─────────────────────────────────────────────────────────────────
+export const disputeApi = {
+    list: () => request('GET', '/disputes/'),
+    create: (contract_id, reason) => request('POST', '/disputes/', { contract_id, reason }),
+    resolve: (id, resolution_note) => request('PATCH', `/disputes/${id}/resolve/`, { resolution_note }),
+    listAll: () => request('GET', '/disputes/all/'),
+};
+

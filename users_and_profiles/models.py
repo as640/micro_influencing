@@ -21,10 +21,11 @@ class UserRole(models.TextChoices):
 
 
 class ContractStatus(models.TextChoices):
-    PENDING   = 'pending',   'Pending'
-    ACTIVE    = 'active',    'Active'
-    COMPLETED = 'completed', 'Completed'
-    CANCELLED = 'cancelled', 'Cancelled'
+    PENDING        = 'pending',        'Pending'
+    ACTIVE         = 'active',         'Active'
+    WORK_SUBMITTED = 'work_submitted', 'Work Submitted'
+    COMPLETED      = 'completed',      'Completed'
+    CANCELLED      = 'cancelled',      'Cancelled'
 
 
 class AdType(models.TextChoices):
@@ -360,6 +361,56 @@ class Contract(models.Model):
             f'Contract #{self.id} | {self.business.company_name} ↔ '
             f'@{self.influencer.instagram_handle} [{self.status}]'
         )
+
+
+# ---------------------------------------------------------------------------
+# 8a. Dispute  →  maps to: "disputes"
+# ---------------------------------------------------------------------------
+
+class DisputeStatus(models.TextChoices):
+    OPEN     = 'open',     'Open'
+    RESOLVED = 'resolved', 'Resolved'
+
+
+class Dispute(models.Model):
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    contract    = models.ForeignKey(
+                      Contract,
+                      on_delete=models.CASCADE,
+                      related_name='disputes',
+                      db_column='contract_id',
+                  )
+    raised_by   = models.ForeignKey(
+                      CustomUser,
+                      on_delete=models.CASCADE,
+                      related_name='raised_disputes',
+                      db_column='raised_by_id',
+                  )
+    reason      = models.TextField()
+    status      = models.CharField(
+                      max_length=20,
+                      choices=DisputeStatus.choices,
+                      default=DisputeStatus.OPEN,
+                  )
+    resolution_note = models.TextField(blank=True, null=True)
+    resolved_by = models.ForeignKey(
+                      CustomUser,
+                      on_delete=models.SET_NULL,
+                      related_name='resolved_disputes',
+                      blank=True, null=True,
+                      db_column='resolved_by_id',
+                  )
+    created_at  = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'disputes'
+        verbose_name = 'Dispute'
+        verbose_name_plural = 'Disputes'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Dispute on Contract#{self.contract_id} [{self.status}]'
 
 # ---------------------------------------------------------------------------
 # 8. Password Reset OTP

@@ -40,18 +40,22 @@ from rest_framework.generics import (
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
-from .models import InfluencerProfile, BusinessProfile, Campaign, Conversation, Message
+from .models import InfluencerProfile, BusinessProfile, Campaign, Conversation, Message, Contract, Dispute
+
 from django.utils import timezone
 from django.db.models import Sum
 from .permissions import IsBusiness, IsConversationParticipant, IsSuperUser
 from .serializers import (
     RegisterSerializer, LoginSerializer, UserMeSerializer,
     InfluencerListSerializer, InfluencerDetailSerializer,
+    BusinessProfileSerializer,
     CampaignSerializer,
     ConversationSerializer, ConversationDetailSerializer, MessageSerializer,
-    InfluencerProfileSerializer, BusinessProfileSerializer,
-    PasswordResetRequestSerializer, PasswordResetConfirmSerializer
+    ContractSerializer,
+    PasswordResetRequestSerializer, PasswordResetConfirmSerializer,
+    DisputeSerializer,
 )
+
 
 
 # ===========================================================================
@@ -98,6 +102,8 @@ class SuperadminDashboardStatsView(APIView):
             total=Sum('agreed_price')
         )['total'] or 0
 
+        open_disputes = Dispute.objects.filter(status='open').count()
+
         return Response({
             'total_businesses': total_businesses,
             'total_influencers': total_influencers,
@@ -106,6 +112,7 @@ class SuperadminDashboardStatsView(APIView):
             'total_pending_contracts': total_pending_contracts,
             'total_active_contracts': total_active_contracts,
             'total_platform_value': float(total_platform_value),
+            'open_disputes': open_disputes,
         }, status=status.HTTP_200_OK)
 
 
@@ -282,6 +289,12 @@ class CampaignListCreateView(ListCreateAPIView):
             if not business:
                 from rest_framework.exceptions import ValidationError
                 raise ValidationError({'business_id': 'No business profile found. Please create or specify one.'})
+        
+        # Conflict Guard: Business cannot post campaign if involved in open dispute
+        if Dispute.objects.filter(contract__business=business, status='open').exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('You have an open dispute. Please resolve it before posting new campaigns.')
+
         serializer.save(business=business)
 
 
@@ -379,6 +392,13 @@ class ConversationListCreateView(APIView):
             
         else:
             return Response({'error': 'Invalid role.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Conflict Guard: Blocks communication if there is an active dispute between them
+        if Dispute.objects.filter(contract__business=business, contract__influencer=influencer, status='open').exists():
+            return Response(
+                {'error': 'You have an open dispute with this user. Communication is blocked until it is resolved.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         # Idempotent — return existing thread if already open
         conversation, created = Conversation.objects.get_or_create(
@@ -592,10 +612,12 @@ class ContractStatusView(APIView):
 
     # Valid transitions: (from_status, to_status) → which role can initiate
     TRANSITIONS = {
-        (ContractStatus.PENDING,   ContractStatus.ACTIVE):    'influencer',
-        (ContractStatus.PENDING,   ContractStatus.CANCELLED): 'any',
-        (ContractStatus.ACTIVE,    ContractStatus.COMPLETED): 'business',
-        (ContractStatus.ACTIVE,    ContractStatus.CANCELLED): 'any',
+        (ContractStatus.PENDING,        ContractStatus.ACTIVE):          'influencer',
+        (ContractStatus.PENDING,        ContractStatus.CANCELLED):       'any',
+        (ContractStatus.ACTIVE,         ContractStatus.WORK_SUBMITTED):  'influencer',
+        (ContractStatus.ACTIVE,         ContractStatus.CANCELLED):       'any',
+        (ContractStatus.WORK_SUBMITTED, ContractStatus.COMPLETED):       'business',
+        (ContractStatus.WORK_SUBMITTED, ContractStatus.CANCELLED):       'any',
     }
 
     def patch(self, request, pk):
@@ -1029,3 +1051,94 @@ class BusinessGSTVerifyOTPView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+# ===========================================================================
+# Dispute Views (Conflict / Dispute System)
+# ===========================================================================
+
+class DisputeListCreateView(APIView):
+    """
+    GET /api/disputes/
+        List disputes for the authenticated user's contracts.
+    POST /api/disputes/
+        Create a dispute for an active or work_submitted contract.
+        Body: { "contract_id": "<uuid>", "reason": "Text description" }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.is_superuser:
+            qs = Dispute.objects.all()
+        elif user.role == 'business':
+            qs = Dispute.objects.filter(contract__business__user=user)
+        else:
+            qs = Dispute.objects.filter(contract__influencer__user=user)
+            
+        serializer = DisputeSerializer(qs, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        contract_id = request.data.get('contract_id')
+        reason = request.data.get('reason')
+        
+        if not contract_id or not reason:
+            return Response({'error': 'contract_id and reason are required.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        contract = get_object_or_404(Contract, pk=contract_id)
+        
+        # Verify permissions
+        is_business = request.user.role == 'business' and contract.business.user == request.user
+        is_influencer = request.user.role == 'influencer' and contract.influencer.user == request.user
+        
+        if not (is_business or is_influencer):
+            return Response({'error': 'You are not a party to this contract.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        # Allowed states for dispute
+        import users_and_profiles.models as m
+        if contract.status not in [m.ContractStatus.ACTIVE, m.ContractStatus.WORK_SUBMITTED]:
+            return Response({'error': 'Disputes can only be raised on active or submitted contracts.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        dispute = Dispute.objects.create(
+            contract=contract,
+            raised_by=request.user,
+            reason=reason
+        )
+        return Response(DisputeSerializer(dispute).data, status=status.HTTP_201_CREATED)
+
+
+class SuperadminDisputeListView(APIView):
+    """GET /api/disputes/all/ - Superadmin global dispute list."""
+    permission_classes = [IsAuthenticated, IsSuperUser]
+    
+    def get(self, request):
+        qs = Dispute.objects.all().order_by('status', '-created_at')
+        return Response(DisputeSerializer(qs, many=True).data)
+
+
+class DisputeResolveView(APIView):
+    """
+    PATCH /api/disputes/<pk>/resolve/
+    Superadmin only. Mark dispute as resolved.
+    Body: { "resolution_note": "How it was resolved..." }
+    """
+    permission_classes = [IsAuthenticated, IsSuperUser]
+    
+    def patch(self, request, pk):
+        dispute = get_object_or_404(Dispute, pk=pk)
+        
+        if dispute.status == 'resolved':
+            return Response({'error': 'Dispute is already resolved.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        note = request.data.get('resolution_note')
+        if not note:
+            return Response({'error': 'resolution_note is required to resolve a dispute.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        dispute.status = 'resolved'
+        dispute.resolution_note = note
+        dispute.resolved_by = request.user
+        dispute.resolved_at = timezone.now()
+        dispute.save()
+        
+        return Response(DisputeSerializer(dispute).data)

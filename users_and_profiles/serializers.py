@@ -366,11 +366,12 @@ class ContractSerializer(serializers.ModelSerializer):
     business_name      = serializers.CharField(source='business.company_name',        read_only=True)
     influencer_handle  = serializers.CharField(source='influencer.instagram_handle',  read_only=True)
     campaign_title     = serializers.CharField(source='campaign.title', default=None, read_only=True)
+    has_open_dispute   = serializers.SerializerMethodField()
 
     class Meta:
         model  = Contract
         fields = [
-            'id', 'status',
+            'id', 'status', 'has_open_dispute',
             'agreed_price', 'deliverables', 'payment_intent_id',
             'created_at', 'updated_at',
             # write-only FKs
@@ -385,6 +386,10 @@ class ContractSerializer(serializers.ModelSerializer):
             'payment_intent_id': {'required': False},
             'status':            {'required': False},
         }
+
+    def get_has_open_dispute(self, obj):
+        # Prevent N+1 issues if preferred, but since it's a small list this is fine
+        return obj.disputes.filter(status='open').exists()
 
 # ---------------------------------------------------------------------------
 # Password Reset
@@ -402,3 +407,32 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=6)
     new_password = serializers.CharField(write_only=True, min_length=8)
+
+
+# ---------------------------------------------------------------------------
+# Disputes
+# ---------------------------------------------------------------------------
+
+class DisputeSerializer(serializers.ModelSerializer):
+    raised_by_email       = serializers.EmailField(source='raised_by.email',            read_only=True)
+    business_name         = serializers.CharField(source='contract.business.company_name', read_only=True)
+    influencer_handle     = serializers.CharField(source='contract.influencer.instagram_handle', read_only=True)
+    resolved_by_email     = serializers.EmailField(source='resolved_by.email', default=None, read_only=True)
+
+    class Meta:
+        from .models import Dispute
+        model  = Dispute
+        fields = [
+            'id', 'contract', 'raised_by', 'raised_by_email',
+            'business_name', 'influencer_handle',
+            'reason', 'status', 'resolution_note',
+            'resolved_by', 'resolved_by_email',
+            'created_at', 'resolved_at',
+        ]
+        extra_kwargs = {
+            'raised_by':  {'read_only': True},
+            'resolved_by': {'read_only': True},
+            'status':     {'read_only': True},
+            'resolved_at': {'read_only': True},
+        }
+

@@ -32,6 +32,8 @@ from .views import (
     PublicBusinessGSTRequestOTPView, BusinessGSTRequestOTPView, BusinessGSTVerifyOTPView,
     # Admin helpers
     BusinessListView,
+    # Disputes
+    DisputeListCreateView, DisputeResolveView, SuperadminDisputeListView,
 )
 
 urlpatterns = [
@@ -97,4 +99,12 @@ urlpatterns = [
          InstagramAuthURLView.as_view(),   name='instagram-auth-url'),
     path('instagram/callback/',
          InstagramCallbackView.as_view(),  name='instagram-callback'),
+
+    # ── Disputes ─────────────────────────────────────────────
+    path('disputes/',
+         DisputeListCreateView.as_view(), name='dispute-list-create'),
+    path('disputes/<uuid:pk>/resolve/',
+         DisputeResolveView.as_view(),    name='dispute-resolve'),
+    path('disputes/all/',
+         SuperadminDisputeListView.as_view(), name='dispute-all'),
 ]

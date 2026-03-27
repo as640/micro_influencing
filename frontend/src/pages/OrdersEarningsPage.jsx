@@ -22,7 +22,7 @@ function OrdersEarningsPage() {
   const fmt = (n) => `₹${Number(n.toFixed(0)).toLocaleString('en-IN')}`;
 
   const summaryCards = [
-    { label: 'Total earnings', value: fmt(totalEarned) },
+    { label: isInfluencer ? 'Total Earned' : 'Total Spent', value: fmt(totalEarned) },
     { label: 'Completed jobs', value: contracts.length },
     { label: 'Pending payout', value: '₹0' }, // Future: payment status field
   ];
@@ -34,7 +34,7 @@ function OrdersEarningsPage() {
   return (
     <section className="space-y-6 animate-fade-up">
       <div>
-        <h2 className="text-2xl font-bold text-white">Order History &amp; Earnings</h2>
+        <h2 className="text-2xl font-bold text-white">Order History &amp; {isInfluencer ? 'Earnings' : 'Spending'}</h2>
         <p className="mt-1 text-slate-400">All completed collaborations and payouts.</p>
       </div>
 

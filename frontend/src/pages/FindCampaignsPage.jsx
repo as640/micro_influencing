@@ -58,6 +58,12 @@ function FindCampaignsPage() {
         setAppliedFilters({});
     };
 
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            applyFilters();
+        }
+    };
+
     const handleApply = async (businessId, campaignId) => {
         try {
             setApplyingTo(campaignId);
@@ -106,17 +112,17 @@ function FindCampaignsPage() {
                     </select>
                     <input
                         type="text" name="business_locality" placeholder="Business Locality"
-                        value={filters.business_locality} onChange={handleFilterChange}
+                        value={filters.business_locality} onChange={handleFilterChange} onKeyDown={handleKeyDown}
                         className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
                     />
                     <input
                         type="number" name="min_budget" placeholder="Min Budget (₹)"
-                        value={filters.min_budget} onChange={handleFilterChange}
+                        value={filters.min_budget} onChange={handleFilterChange} onKeyDown={handleKeyDown}
                         className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
                     />
                     <input
                         type="number" name="max_budget" placeholder="Max Budget (₹)"
-                        value={filters.max_budget} onChange={handleFilterChange}
+                        value={filters.max_budget} onChange={handleFilterChange} onKeyDown={handleKeyDown}
                         className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
                     />
                 </div>

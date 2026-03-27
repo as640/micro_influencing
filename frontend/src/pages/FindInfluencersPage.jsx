@@ -15,6 +15,7 @@ function FindInfluencersPage() {
     const [influencers, setInfluencers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [startingChat, setStartingChat] = useState(false);
+    const [expandedId, setExpandedId] = useState(null);
 
     const [filters, setFilters] = useState({
         category: '',
@@ -32,8 +33,8 @@ function FindInfluencersPage() {
             try {
                 // Construct query parameters
                 const params = new URLSearchParams();
-                if (appliedFilters.category) params.append('category__icontains', appliedFilters.category);
-                if (appliedFilters.locality) params.append('locality__icontains', appliedFilters.locality);
+                if (appliedFilters.category) params.append('category', appliedFilters.category);
+                if (appliedFilters.locality) params.append('locality', appliedFilters.locality);
                 if (appliedFilters.min_followers) params.append('min_followers', appliedFilters.min_followers);
                 if (appliedFilters.max_price) params.append('max_price', appliedFilters.max_price);
 
@@ -59,6 +60,12 @@ function FindInfluencersPage() {
     const clearFilters = () => {
         setFilters({ category: '', locality: '', min_followers: '', max_price: '' });
         setAppliedFilters({});
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            applyFilters();
+        }
     };
 
     const handleMessage = async (influencerId) => {
@@ -97,22 +104,22 @@ function FindInfluencersPage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <input
                         type="text" name="category" placeholder="Category (e.g. fitness)"
-                        value={filters.category} onChange={handleFilterChange}
+                        value={filters.category} onChange={handleFilterChange} onKeyDown={handleKeyDown}
                         className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
                     />
                     <input
                         type="text" name="locality" placeholder="City or Locality"
-                        value={filters.locality} onChange={handleFilterChange}
+                        value={filters.locality} onChange={handleFilterChange} onKeyDown={handleKeyDown}
                         className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
                     />
                     <input
                         type="number" name="min_followers" placeholder="Min Followers"
-                        value={filters.min_followers} onChange={handleFilterChange}
+                        value={filters.min_followers} onChange={handleFilterChange} onKeyDown={handleKeyDown}
                         className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
                     />
                     <input
                         type="number" name="max_price" placeholder="Max Price (₹)"
-                        value={filters.max_price} onChange={handleFilterChange}
+                        value={filters.max_price} onChange={handleFilterChange} onKeyDown={handleKeyDown}
                         className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
                     />
                 </div>
@@ -168,15 +175,52 @@ function FindInfluencersPage() {
                                         </p>
                                     </div>
                                 </div>
+                                
+                                {expandedId === inf.id && (
+                                    <div className="mt-4 border-t border-slate-800 pt-4 animate-fade-in space-y-4">
+                                        <div>
+                                            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Bio</p>
+                                            <p className="mt-1 text-sm text-slate-300 line-clamp-3">{inf.bio || 'No bio provided.'}</p>
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-2 text-center">
+                                            <div className="rounded-md bg-slate-800/50 p-2">
+                                                <p className="text-xs text-slate-500">Avg Reach</p>
+                                                <p className="font-semibold text-slate-200">{formatNumber(inf.average_reach) || '--'}</p>
+                                            </div>
+                                            <div className="rounded-md bg-slate-800/50 p-2">
+                                                <p className="text-xs text-slate-500">Avg Likes</p>
+                                                <p className="font-semibold text-slate-200">{formatNumber(inf.average_likes_post) || '--'}</p>
+                                            </div>
+                                            <div className="rounded-md bg-slate-800/50 p-2">
+                                                <p className="text-xs text-slate-500">Reel Hits</p>
+                                                <p className="font-semibold text-slate-200">{formatNumber(inf.average_likes_reel) || '--'}</p>
+                                            </div>
+                                        </div>
+                                        {inf.audience_demographics && (
+                                            <div>
+                                                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Audience</p>
+                                                <p className="mt-1 text-sm text-slate-300">{inf.audience_demographics}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
-                            <button
-                                onClick={() => handleMessage(inf.id)}
-                                disabled={startingChat}
-                                className="mt-6 w-full rounded-lg bg-indigo-600/10 py-2.5 font-semibold text-indigo-400 transition hover:bg-indigo-600 hover:text-white disabled:opacity-50"
-                            >
-                                Send Message
-                            </button>
+                            <div className="mt-6 flex flex-col gap-2">
+                                <button
+                                    onClick={() => setExpandedId(expandedId === inf.id ? null : inf.id)}
+                                    className="w-full rounded-lg bg-slate-800 py-2.5 text-sm font-semibold text-slate-300 transition hover:bg-slate-700"
+                                >
+                                    {expandedId === inf.id ? 'View Less' : 'View Full Profile'}
+                                </button>
+                                <button
+                                    onClick={() => handleMessage(inf.id)}
+                                    disabled={startingChat}
+                                    className="w-full rounded-lg bg-indigo-600/10 py-2.5 font-semibold text-indigo-400 transition hover:bg-indigo-600 hover:text-white disabled:opacity-50"
+                                >
+                                    Send Message
+                                </button>
+                            </div>
                         </div>
                     ))}
                 </div>

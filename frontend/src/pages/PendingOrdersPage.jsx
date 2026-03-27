@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { contractApi, paymentApi } from '../api';
+import { contractApi, paymentApi, disputeApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 const RAZORPAY_KEY_ID = import.meta.env.VITE_RAZORPAY_KEY_ID || '';
@@ -8,13 +8,14 @@ function StatusBadge({ status }) {
   const styles = {
     pending: 'bg-amber-900/40 text-amber-300',
     active: 'bg-blue-900/40 text-blue-300',
+    work_submitted: 'bg-indigo-900/40 text-indigo-300',
     completed: 'bg-emerald-900/40 text-emerald-300',
     cancelled: 'bg-red-900/40 text-red-300',
     paid: 'bg-purple-900/40 text-purple-300',
   };
   return (
     <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${styles[status] || 'bg-slate-800 text-slate-300'}`}>
-      {status}
+      {status.replace('_', ' ')}
     </span>
   );
 }
@@ -26,6 +27,7 @@ function PendingOrdersPage() {
   const [updating, setUpdating] = useState(null);
   const [paying, setPaying] = useState(null);
   const [paymentResult, setPaymentResult] = useState(null); // { success, message }
+  const [disputeModal, setDisputeModal] = useState({ isOpen: false, contractId: null, reason: '' });
 
   useEffect(() => {
     contractApi.list()
@@ -59,6 +61,32 @@ function PendingOrdersPage() {
       setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'completed' } : c));
     } catch (err) { console.error(err); }
     finally { setUpdating(null); }
+  };
+
+  const handleSubmitWork = async (id) => {
+    setUpdating(id);
+    try {
+      await contractApi.updateStatus(id, 'work_submitted');
+      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'work_submitted' } : c));
+    } catch (err) { console.error(err); }
+    finally { setUpdating(null); }
+  };
+
+  const handleRaiseDispute = async (e) => {
+    e.preventDefault();
+    if (!disputeModal.reason.trim()) return;
+    setUpdating(disputeModal.contractId);
+    try {
+      await disputeApi.create(disputeModal.contractId, disputeModal.reason);
+      setContracts((prev) => prev.map((c) => c.id === disputeModal.contractId ? { ...c, has_open_dispute: true } : c));
+      setDisputeModal({ isOpen: false, contractId: null, reason: '' });
+      alert('Dispute raised successfully. Communication is now paused until resolved.');
+    } catch (err) { 
+      console.error(err);
+      alert('Failed to raise dispute.');
+    } finally { 
+      setUpdating(null); 
+    }
   };
 
   // ── Razorpay Payment Flow ──────────────────────────────────────
@@ -214,7 +242,14 @@ function PendingOrdersPage() {
                       <td className="px-5 py-4 text-sm text-slate-300">{otherParty}</td>
                       <td className="px-5 py-4 max-w-[180px] truncate text-sm text-slate-300" title={c.deliverables}>{c.deliverables}</td>
                       <td className="px-5 py-4 text-sm font-semibold text-white">₹{Number(c.agreed_price).toLocaleString('en-IN')}</td>
-                      <td className="px-5 py-4"><StatusBadge status={wasJustPaid ? 'paid' : c.status} /></td>
+                      <td className="px-5 py-4">
+                        <StatusBadge status={wasJustPaid ? 'paid' : c.status} />
+                        {c.has_open_dispute && (
+                          <span className="ml-2 inline-flex items-center rounded-md bg-red-400/10 px-2 py-1 text-xs font-medium text-red-500 ring-1 ring-inset ring-red-400/20">
+                            DISPUTED
+                          </span>
+                        )}
+                      </td>
                       <td className="px-5 py-4">
                         {/* Influencer: accept or decline pending contracts */}
                         {c.status === 'pending' && isInfluencer && (
@@ -230,34 +265,62 @@ function PendingOrdersPage() {
                           </div>
                         )}
 
-                        {/* Business: on active contracts — Pay Now + Mark Complete + Cancel */}
-                        {c.status === 'active' && !isInfluencer && (
+                        {/* Influencer: active contract -> Submit Work */}
+                        {c.status === 'active' && isInfluencer && (
                           <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={() => handlePayNow(c)}
-                              disabled={isPaying}
-                              className="flex items-center gap-1.5 rounded bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-md shadow-indigo-900/40 transition hover:from-violet-500 hover:to-indigo-500 disabled:opacity-50"
-                            >
-                              {isPaying ? (
-                                <span className="animate-pulse">Processing…</span>
-                              ) : (
-                                <>💳 Pay Now</>
-                              )}
+                            <button onClick={() => handleSubmitWork(c.id)} disabled={updating === c.id || c.has_open_dispute}
+                              className="rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50">
+                              Submit Work
                             </button>
-                            <button onClick={() => handleComplete(c.id)} disabled={updating === c.id}
-                              className="rounded bg-emerald-700 px-3 py-1 text-xs font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50">
-                              ✓ Mark Done
-                            </button>
-                            <button onClick={() => handleCancel(c.id)} disabled={updating === c.id}
-                              className="rounded bg-slate-700 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:bg-slate-600 disabled:opacity-50">
-                              Cancel
+                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
+                              className="rounded border border-red-900/50 bg-red-900/20 px-3 py-1 text-xs font-semibold text-red-400 transition hover:bg-red-900/40">
+                              Dispute
                             </button>
                           </div>
                         )}
 
-                        {/* Influencer: on active contracts — view status only */}
-                        {c.status === 'active' && isInfluencer && (
-                          <span className="text-xs text-slate-500 italic">Awaiting payment from business</span>
+                        {/* Business: active contract -> Awaiting Work */}
+                        {c.status === 'active' && !isInfluencer && (
+                          <div className="flex flex-wrap gap-2 items-center">
+                            <span className="text-xs text-slate-500 italic pr-2">Awaiting work...</span>
+                            <button onClick={() => handleCancel(c.id)} disabled={updating === c.id || c.has_open_dispute}
+                              className="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:bg-slate-700 disabled:opacity-50">
+                              Cancel
+                            </button>
+                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
+                              className="rounded border border-red-900/50 bg-red-900/20 px-3 py-1 text-xs font-semibold text-red-400 transition hover:bg-red-900/40">
+                              Dispute
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Business: work_submitted -> Pay Now or Confirm */}
+                        {c.status === 'work_submitted' && !isInfluencer && (
+                          <div className="flex flex-wrap gap-2">
+                            <button onClick={() => handlePayNow(c)} disabled={isPaying || c.has_open_dispute}
+                              className="flex items-center gap-1.5 rounded bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-md shadow-indigo-900/40 transition hover:from-violet-500 hover:to-indigo-500 disabled:opacity-50">
+                              {isPaying ? <span className="animate-pulse">Processing…</span> : <>💳 Pay Now</>}
+                            </button>
+                            <button onClick={() => handleComplete(c.id)} disabled={updating === c.id || c.has_open_dispute}
+                              className="rounded bg-emerald-700 px-3 py-1 text-xs font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50">
+                              ✓ Verify Manually
+                            </button>
+                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
+                              className="rounded border border-red-900/50 bg-red-900/20 px-3 py-1 text-xs font-semibold text-red-400 transition hover:bg-red-900/40">
+                              Dispute
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Influencer: work_submitted -> Awaiting Payment / Verification */}
+                        {c.status === 'work_submitted' && isInfluencer && (
+                          <div className="flex flex-wrap gap-2 items-center">
+                            <span className="text-xs text-emerald-400 font-semibold italic pr-2">Work Submitted. Awaiting verification/payment.</span>
+                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
+                              className="rounded border border-red-900/50 bg-red-900/20 px-3 py-1 text-xs font-semibold text-red-400 transition hover:bg-red-900/40">
+                              Dispute
+                            </button>
+                          </div>
                         )}
 
                         {/* Completed / paid */}
@@ -282,6 +345,43 @@ function PendingOrdersPage() {
             Add <code className="rounded bg-amber-900/50 px-1">VITE_RAZORPAY_KEY_ID=rzp_test_XXXX</code> to your{' '}
             <code className="rounded bg-amber-900/50 px-1">frontend/.env</code> file and restart the dev server.
           </p>
+        </div>
+      )}
+
+      {/* Dispute Modal */}
+      {disputeModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-white mb-2">Raise a Dispute</h3>
+            <p className="text-sm text-slate-400 mb-4">Please detail the issue. This will pause platform communication with the other party until an admin resolves it.</p>
+            
+            <form onSubmit={handleRaiseDispute}>
+              <textarea
+                className="w-full rounded-xl border border-slate-700 bg-slate-800 p-3 text-sm text-white placeholder-slate-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                rows="4"
+                placeholder="Explain the problem (e.g., work not submitted, payment delayed, poor quality...)"
+                value={disputeModal.reason}
+                onChange={(e) => setDisputeModal(m => ({ ...m, reason: e.target.value }))}
+                required
+              />
+              <div className="mt-5 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDisputeModal({ isOpen: false, contractId: null, reason: '' })}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!disputeModal.reason.trim() || updating === disputeModal.contractId}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 disabled:opacity-50"
+                >
+                  {updating === disputeModal.contractId ? 'Submitting...' : 'Submit Dispute'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </section>
