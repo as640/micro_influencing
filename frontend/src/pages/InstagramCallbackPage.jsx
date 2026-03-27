@@ -7,7 +7,7 @@ import BrandLogo from '../components/BrandLogo';
 function InstagramCallbackPage() {
     const location = useLocation();
     const navigate = useNavigate();
-    const { login, user } = useAuth();
+    const { replaceUser, user, loading: authLoading } = useAuth();
 
     const [status, setStatus] = useState('Verifying your Instagram account...');
     const [error, setError] = useState(null);
@@ -16,7 +16,14 @@ function InstagramCallbackPage() {
     const processed = useRef(false);
 
     useEffect(() => {
-        if (processed.current || !user) return;
+        if (processed.current || authLoading) return;
+
+        if (!user) {
+            setError('Your app session expired before Instagram returned. Log in again and retry verification.');
+            processed.current = true;
+            return;
+        }
+
         processed.current = true;
 
         async function processCallback() {
@@ -36,11 +43,11 @@ function InstagramCallbackPage() {
 
             try {
                 setStatus('Fetching your followers, analytics, and demographics... This might take a few seconds.');
-                const response = await instagramApi.callback(code);
+                await instagramApi.callback(code);
 
                 // Success! Refetch the full user profile to get the new stats
                 const updatedUser = await authApi.me();
-                login(updatedUser); // Update context
+                replaceUser(updatedUser);
 
                 setStatus('Verification complete! Redirecting...');
 
@@ -55,7 +62,7 @@ function InstagramCallbackPage() {
         }
 
         processCallback();
-    }, [location.search, navigate, login, user]);
+    }, [authLoading, location.search, navigate, replaceUser, user]);
 
     return (
         <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 px-6 text-center text-slate-100">

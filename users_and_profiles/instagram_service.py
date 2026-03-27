@@ -1,377 +1,329 @@
 """
 users_and_profiles/instagram_service.py
 
-Handles all Instagram OAuth and Graph API interactions.
-
-Flow:
-  1. get_auth_url(user_id)         → URL to redirect influencer to Instagram
-  2. exchange_code(code)           → Short-lived access token (1 hour)
-  3. get_long_lived_token(token)   → Long-lived token (60 days)
-  4. fetch_profile(token)          → Followers, bio, username, media count
-  5. fetch_media_metrics(token)    → Avg reach, avg reel views
-
-Instagram API used:
-  • Instagram Basic Display API — OAuth + basic profile (any account type)
-  • Instagram Graph API         — Insights + follower metrics (Business/Creator only)
-
-Developer App setup required:
-  https://developers.facebook.com/
-  → Create App → Instagram → Basic Display
-  → Add redirect URI matching INSTAGRAM_REDIRECT_URI in .env
+Instagram Login + Graph API helpers for professional Instagram accounts.
 """
 
-import logging
-import requests
 import concurrent.futures
+import logging
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
+
+import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Instagram API base URLs
-OAUTH_BASE    = "https://api.instagram.com/oauth"
-GRAPH_BASE    = "https://graph.instagram.com"
+API_VERSION = "v21.0"
+AUTH_BASE = "https://www.instagram.com/oauth"
+TOKEN_BASE = "https://api.instagram.com/oauth"
+GRAPH_BASE = f"https://graph.instagram.com/{API_VERSION}"
+INSTAGRAM_LOGIN_SCOPES = (
+    "instagram_business_basic",
+    "instagram_business_manage_insights",
+)
 
 
-# ---------------------------------------------------------------------------
-# Step 1 — Build the OAuth authorization URL
-# ---------------------------------------------------------------------------
+def _parse_response(response: requests.Response, action: str) -> dict:
+    """Decode a JSON response and raise a helpful error on failure."""
+    try:
+        data = response.json()
+    except ValueError as exc:
+        response.raise_for_status()
+        raise ValueError(f"{action} failed: non-JSON response from Instagram.") from exc
+
+    if response.ok and "error" not in data and "error_type" not in data:
+        return data
+
+    raise ValueError(f"{action} failed: {data}")
+
 
 def get_auth_url(state: str) -> str:
     """
-    Returns the URL the influencer should be redirected to in order to
-    authorize the app on Instagram.
+    Return the Instagram Login authorization URL.
 
-    'state' should be a tamper-proof identifier (e.g. the user's UUID or
-    a signed JWT) so we know which influencer is connecting in the callback.
+    The state value should identify the logged-in influencer in a tamper-proof
+    way so the callback can be matched back to the correct user session.
     """
     params = {
-        "client_id":     settings.INSTAGRAM_APP_ID,
-        "redirect_uri":  settings.INSTAGRAM_REDIRECT_URI,
-        "scope":         "user_profile,user_media",
+        "client_id": settings.INSTAGRAM_APP_ID,
+        "redirect_uri": settings.INSTAGRAM_REDIRECT_URI,
+        "scope": ",".join(INSTAGRAM_LOGIN_SCOPES),
         "response_type": "code",
-        "state":         state,
+        "state": state,
     }
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    return f"{OAUTH_BASE}/authorize?{query}"
+    return f"{AUTH_BASE}/authorize?{urlencode(params)}"
 
-
-# ---------------------------------------------------------------------------
-# Step 2 — Exchange the authorization code for a short-lived token
-# ---------------------------------------------------------------------------
 
 def exchange_code(code: str) -> dict:
-    """
-    Exchanges the one-time OAuth code for a short-lived access token (1 hour).
-    Returns: { access_token, token_type, user_id }
-    Raises: ValueError on failure.
-    """
-    resp = requests.post(
-        f"{OAUTH_BASE}/access_token",
+    """Exchange the authorization code for a short-lived access token."""
+    response = requests.post(
+        f"{TOKEN_BASE}/access_token",
         data={
-            "client_id":     settings.INSTAGRAM_APP_ID,
+            "client_id": settings.INSTAGRAM_APP_ID,
             "client_secret": settings.INSTAGRAM_APP_SECRET,
-            "grant_type":    "authorization_code",
-            "redirect_uri":  settings.INSTAGRAM_REDIRECT_URI,
-            "code":          code,
+            "grant_type": "authorization_code",
+            "redirect_uri": settings.INSTAGRAM_REDIRECT_URI,
+            "code": code,
         },
         timeout=10,
     )
-    data = resp.json()
-    if "error_type" in data or "error" in data:
-        raise ValueError(f"Instagram token exchange failed: {data}")
-    return data   # { access_token, token_type, user_id }
+    return _parse_response(response, "Instagram token exchange")
 
-
-# ---------------------------------------------------------------------------
-# Step 3 — Upgrade to a long-lived token (60 days)
-# ---------------------------------------------------------------------------
 
 def get_long_lived_token(short_lived_token: str) -> dict:
-    """
-    Exchanges the 1-hour short-lived token for a 60-day long-lived token.
-    Returns: { access_token, token_type, expires_in (seconds) }
-    """
-    resp = requests.get(
+    """Exchange the short-lived token for a long-lived token."""
+    response = requests.get(
         f"{GRAPH_BASE}/access_token",
         params={
-            "grant_type":    "ig_exchange_token",
+            "grant_type": "ig_exchange_token",
             "client_secret": settings.INSTAGRAM_APP_SECRET,
-            "access_token":  short_lived_token,
+            "access_token": short_lived_token,
         },
         timeout=10,
     )
-    data = resp.json()
-    if "error" in data:
-        raise ValueError(f"Long-lived token exchange failed: {data}")
-    return data   # { access_token, token_type, expires_in }
+    return _parse_response(response, "Instagram long-lived token exchange")
 
 
-# ---------------------------------------------------------------------------
-# Step 4 — Fetch influencer's basic profile
-# ---------------------------------------------------------------------------
-
-def fetch_profile(access_token: str) -> dict:
+def fetch_profile(access_token: str) -> tuple[str, dict]:
     """
-    Fetches basic profile information from the Instagram Graph API.
+    Fetch the connected professional account ID and profile summary fields.
 
-    For Business/Creator accounts: returns follower_count, biography, etc.
-    For personal accounts (Basic Display API): returns id, username, media_count only.
-
-    Returns a dict of fields that can be applied directly to InfluencerProfile.
+    Returns:
+      (instagram_user_id, influencer_profile_fields)
     """
-    # Try Graph API first (Business/Creator accounts)
-    resp = requests.get(
+    response = requests.get(
         f"{GRAPH_BASE}/me",
         params={
-            "fields":       "id,username,biography,followers_count,follows_count,media_count,profile_picture_url",
+            "fields": (
+                "id,user_id,username,name,account_type,"
+                "profile_picture_url,followers_count,follows_count,media_count"
+            ),
             "access_token": access_token,
         },
         timeout=10,
     )
-    data = resp.json()
+    data = _parse_response(response, "Instagram profile fetch")
 
-    if "error" in data:
-        # Fallback: Basic Display API (personal accounts)
-        logger.warning("Graph API profile fetch failed. Falling back to Basic Display API.")
-        resp = requests.get(
-            f"{GRAPH_BASE}/me",
-            params={
-                "fields":       "id,username,media_count",
-                "access_token": access_token,
-            },
-            timeout=10,
-        )
-        data = resp.json()
-        if "error" in data:
-            raise ValueError(f"Instagram profile fetch failed: {data}")
-
-    return {
-        "instagram_handle":  data.get("username", ""),
-        "bio":               data.get("biography") or data.get("bio"),
-        "followers_count":   data.get("followers_count", 0),
-        "following_count":   data.get("follows_count", 0),
-        "posts_count":       data.get("media_count", 0),
+    instagram_user_id = data.get("user_id") or data.get("id") or ""
+    profile_fields = {
+        "instagram_handle": data.get("username", ""),
+        "followers_count": data.get("followers_count", 0) or 0,
+        "following_count": data.get("follows_count", 0) or 0,
+        "posts_count": data.get("media_count", 0) or 0,
     }
+    return instagram_user_id, profile_fields
 
 
-# ---------------------------------------------------------------------------
-# Step 5 — Fetch media metrics (avg reach & reel views)
-# ---------------------------------------------------------------------------
+def _extract_metric_values(data: dict) -> dict:
+    metrics = {}
+    for metric in data.get("data", []):
+        values = metric.get("values") or []
+        if values:
+            metrics[metric["name"]] = values[0].get("value", 0)
+    return metrics
 
-def _fetch_single_reel_insight(media_id: str, access_token: str) -> int:
-    """Helper to fetch views for a single reel."""
+
+def _fetch_single_media_insight(media_item: dict, access_token: str) -> dict:
+    """Fetch reach and, when supported, views for a single media item."""
+    media_id = media_item["id"]
+    metric_names = ["reach"]
+    if media_item.get("media_type") == "VIDEO" or media_item.get("media_product_type") == "REELS":
+        metric_names.insert(0, "views")
+
     try:
-        ins = requests.get(
+        response = requests.get(
             f"{GRAPH_BASE}/{media_id}/insights",
-            params={"metric": "impressions,reach,video_views", "access_token": access_token},
+            params={"metric": ",".join(metric_names), "access_token": access_token},
             timeout=5,
-        ).json()
-        for metric in ins.get("data", []):
-            if metric["name"] == "video_views":
-                return metric.get("values", [{}])[0].get("value", 0)
-    except Exception as e:
-        logger.warning(f"Error fetching insight for media {media_id}: {e}")
-    return 0
+        )
+        data = _parse_response(response, f"Instagram media insight fetch for {media_id}")
+        return _extract_metric_values(data)
+    except Exception as exc:
+        logger.warning("Error fetching insight for media %s: %s", media_id, exc)
+        return {}
 
 
-def fetch_media_metrics(access_token: str) -> dict:
+def fetch_media_metrics(access_token: str, instagram_user_id: str) -> dict:
     """
-    Scans the last 20 media items and computes:
-      - avg_views_per_reel  (from VIDEO/REEL type posts)
-      - avg_reach           (from post-level insights; requires Business account)
-
-    Uses concurrent.futures to fetch reel insights in parallel, significantly
-    speeding up the N+1 API calls.
+    Scan recent media and compute average likes, reach, and views.
     """
-    resp = requests.get(
-        f"{GRAPH_BASE}/me/media",
+    if not instagram_user_id:
+        return {
+            "avg_views_per_reel": 0,
+            "avg_reach": 0,
+            "avg_likes_per_post": 0,
+            "avg_likes_per_reel": 0,
+        }
+
+    response = requests.get(
+        f"{GRAPH_BASE}/{instagram_user_id}/media",
         params={
-            "fields":       "id,media_type,like_count",
-            "limit":        20,
+            "fields": "id,media_type,media_product_type,like_count",
+            "limit": 20,
             "access_token": access_token,
         },
         timeout=10,
     )
-    data = resp.json()
-    if "error" in data:
-        logger.warning("Media metrics fetch failed: %s", data)
-        return {"avg_views_per_reel": 0, "avg_reach": 0, "avg_likes_per_post": 0, "avg_likes_per_reel": 0}
 
-    items       = data.get("data", [])
-    all_likes   = []
-    reel_likes  = []
-    reel_ids    = []
+    try:
+        data = _parse_response(response, "Instagram media list fetch")
+    except ValueError as exc:
+        logger.warning("Media metrics fetch failed: %s", exc)
+        return {
+            "avg_views_per_reel": 0,
+            "avg_reach": 0,
+            "avg_likes_per_post": 0,
+            "avg_likes_per_reel": 0,
+        }
+
+    items = data.get("data", [])
+    all_likes = []
+    reel_likes = []
+    insight_candidates = []
+    reach_values = []
+    reel_views = []
 
     for item in items:
         likes = item.get("like_count", 0)
         all_likes.append(likes)
 
-        if item.get("media_type") in ("VIDEO", "REELS"):
+        if item.get("media_type") == "VIDEO" or item.get("media_product_type") == "REELS":
             reel_likes.append(likes)
-            reel_ids.append(item['id'])
 
-    # Fetch all reel insights concurrently to avoid the 6-second delay
-    reel_views = []
-    if reel_ids:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(reel_ids))) as executor:
-            # Map the helper function over perfectly batched requests
-            futures = [executor.submit(_fetch_single_reel_insight, rid, access_token) for rid in reel_ids]
+        insight_candidates.append(item)
+
+    if insight_candidates:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(insight_candidates))) as executor:
+            futures = [executor.submit(_fetch_single_media_insight, item, access_token) for item in insight_candidates]
             for future in concurrent.futures.as_completed(futures):
-                views = future.result()
-                if views > 0:
-                    reel_views.append(views)
+                metrics = future.result()
+                reach = metrics.get("reach")
+                views = metrics.get("views")
+                if isinstance(reach, (int, float)) and reach > 0:
+                    reach_values.append(int(reach))
+                if isinstance(views, (int, float)) and views > 0:
+                    reel_views.append(int(views))
 
     return {
         "avg_views_per_reel": int(sum(reel_views) / len(reel_views)) if reel_views else 0,
-        "avg_likes_per_post":  int(sum(all_likes)  / len(all_likes))  if all_likes  else 0,
-        "avg_likes_per_reel":  int(sum(reel_likes) / len(reel_likes)) if reel_likes else 0,
-        "avg_reach":           0,   # Requires page-level insights (Business account)
+        "avg_likes_per_post": int(sum(all_likes) / len(all_likes)) if all_likes else 0,
+        "avg_likes_per_reel": int(sum(reel_likes) / len(reel_likes)) if reel_likes else 0,
+        "avg_reach": int(sum(reach_values) / len(reach_values)) if reach_values else 0,
     }
 
 
-# ---------------------------------------------------------------------------
-# Step 6 — Fetch Audience Demographics
-# ---------------------------------------------------------------------------
-
 def fetch_audience_demographics(access_token: str, instagram_account_id: str) -> dict:
     """
-    Fetches audience demographics (gender/age, city) from Instagram Insights.
-    Requires a Business or Creator account.
-    Falls back gracefully if insights are unavailable.
+    Fetch audience demographics from Instagram Insights.
+
+    This requires a professional account and may return no data for small
+    accounts or accounts without sufficient insights eligibility.
     """
     if not instagram_account_id:
         return {}
 
-    resp = requests.get(
-        f"{GRAPH_BASE}/{instagram_account_id}/insights",
-        params={
-            "metric": "audience_gender_age,audience_city",
-            "period": "lifetime",
-            "access_token": access_token,
-        },
-        timeout=10,
-    )
-    data = resp.json()
-
-    if "error" in data:
-        logger.warning("Audience demographics fetch failed: %s", data)
+    try:
+        response = requests.get(
+            f"{GRAPH_BASE}/{instagram_account_id}/insights",
+            params={
+                "metric": "audience_gender_age,audience_city",
+                "period": "lifetime",
+                "access_token": access_token,
+            },
+            timeout=10,
+        )
+        data = _parse_response(response, "Instagram audience demographics fetch")
+    except ValueError as exc:
+        logger.warning("Audience demographics fetch failed: %s", exc)
         return {"follower_gender_ratio": {}, "top_audience_locality": ""}
 
     demographics = {
         "follower_gender_ratio": {},
-        "top_audience_locality": ""
+        "top_audience_locality": "",
     }
 
     try:
         metrics = data.get("data", [])
         for metric in metrics:
             if metric["name"] == "audience_gender_age":
-                # Values format: {"F.13-17": 10, "M.18-24": 50, ...}
                 gender_age_data = metric.get("values", [{}])[0].get("value", {})
-                
-                # Setup defaults
                 demographics["follower_gender_ratio"] = {"female": 0, "male": 0, "other": 0}
                 demographics["follower_age_ratio"] = {}
-                
+
                 total_f = 0
                 total_m = 0
                 total_u = 0
                 age_buckets = {}
 
                 for key, val in gender_age_data.items():
-                    # key looks like 'F.18-24'
-                    if '.' in key:
-                        gender_prefix, age_range = key.split('.', 1)
-                        
-                        # Add to gender aggregates
-                        if gender_prefix == 'F': total_f += val
-                        elif gender_prefix == 'M': total_m += val
-                        else: total_u += val
-                        
-                        # Add to age aggregates
-                        age_buckets[age_range] = age_buckets.get(age_range, 0) + val
+                    if "." not in key:
+                        continue
+
+                    gender_prefix, age_range = key.split(".", 1)
+                    if gender_prefix == "F":
+                        total_f += val
+                    elif gender_prefix == "M":
+                        total_m += val
+                    else:
+                        total_u += val
+
+                    age_buckets[age_range] = age_buckets.get(age_range, 0) + val
 
                 total_gender = total_f + total_m + total_u
                 if total_gender > 0:
                     demographics["follower_gender_ratio"] = {
                         "female": round((total_f / total_gender) * 100),
-                        "male":   round((total_m / total_gender) * 100),
-                        "other":  round((total_u / total_gender) * 100)
+                        "male": round((total_m / total_gender) * 100),
+                        "other": round((total_u / total_gender) * 100),
                     }
 
                 total_age = sum(age_buckets.values())
                 if total_age > 0:
-                    # Convert to percentages for consistency
                     demographics["follower_age_ratio"] = {
                         age_range: round((count / total_age) * 100)
                         for age_range, count in age_buckets.items()
                     }
 
             elif metric["name"] == "audience_city":
-                # Values format: {"Delhi, India": 500, "Mumbai, India": 300, ...}
                 city_data = metric.get("values", [{}])[0].get("value", {})
                 if city_data:
-                    # Get the key with the highest value
                     top_city = max(city_data, key=city_data.get)
                     demographics["top_audience_locality"] = top_city.split(",")[0].strip()
 
-    except Exception as e:
-        logger.error(f"Error parsing audience demographics: {e}")
+    except Exception as exc:
+        logger.error("Error parsing audience demographics: %s", exc)
 
     return demographics
 
 
-# ---------------------------------------------------------------------------
-# Convenience — full verification pipeline
-# ---------------------------------------------------------------------------
-
 def verify_and_update_profile(influencer_profile, code: str) -> None:
     """
-    Full pipeline called from the callback view:
-      1. Exchange code → short-lived token
-      2. Upgrade to long-lived token (60 days)
-      3. Fetch profile info
+    Full verification pipeline:
+      1. Exchange code -> short-lived token
+      2. Upgrade -> long-lived token
+      3. Fetch profile fields
       4. Fetch media metrics
-      5. Fetch audience demographics
-      6. Save everything to InfluencerProfile + mark is_verified=True
+      5. Fetch demographics
+      6. Save profile + mark verified
     """
-    # Exchange code
     short_token_data = exchange_code(code)
-    short_token      = short_token_data["access_token"]
+    short_token = short_token_data["access_token"]
 
-    # Upgrade to long-lived
-    long_token_data  = get_long_lived_token(short_token)
-    long_token       = long_token_data["access_token"]
-    expires_in_secs  = long_token_data.get("expires_in", 5_184_000)  # default 60 days
-    expires_at       = datetime.now(timezone.utc) + timedelta(seconds=expires_in_secs)
+    long_token_data = get_long_lived_token(short_token)
+    long_token = long_token_data["access_token"]
+    expires_in_secs = long_token_data.get("expires_in", 5_184_000)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in_secs)
 
-    # Fetch data
-    profile_data     = fetch_profile(long_token)
-    metrics_data     = fetch_media_metrics(long_token)
-    
-    # Needs the Instagram account ID from profile_data
-    ig_account_id    = fetch_profile(long_token).get('id', '') # refetched or parse from url
-    
-    # Better: we modify fetch_profile to return the ID as well as fields.
-    # Since fetch_profile returns a dict that maps directly to InfluencerProfile fields,
-    # and the ID is not an InfluencerProfile field, we need to extract it inside verify_and_update_profile
-    # Let's get it directly:
-    resp = requests.get(
-        f"{GRAPH_BASE}/me",
-        params={"fields": "id", "access_token": long_token},
-        timeout=10,
-    )
-    ig_account_id = resp.json().get('id', '')
-    
-    demographics_data = fetch_audience_demographics(long_token, ig_account_id)
+    instagram_account_id, profile_data = fetch_profile(long_token)
+    metrics_data = fetch_media_metrics(long_token, instagram_account_id)
+    demographics_data = fetch_audience_demographics(long_token, instagram_account_id)
 
-    # Update the InfluencerProfile
     for field, value in {**profile_data, **metrics_data, **demographics_data}.items():
-        if value is not None and value != {}: # Don't overwrite with empty
+        if value is not None and value != {}:
             setattr(influencer_profile, field, value)
 
-    influencer_profile.instagram_access_token    = long_token
+    influencer_profile.instagram_access_token = long_token
     influencer_profile.instagram_token_expires_at = expires_at
-    influencer_profile.is_verified               = True
+    influencer_profile.is_verified = True
     influencer_profile.save()

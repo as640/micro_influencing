@@ -190,7 +190,7 @@ SIMPLE_JWT = {
 # Get these from https://developers.facebook.com/ → Your App → Instagram → Basic Display
 INSTAGRAM_APP_ID        = config('INSTAGRAM_APP_ID',       default='')
 INSTAGRAM_APP_SECRET    = config('INSTAGRAM_APP_SECRET',   default='')
-# Must exactly match a URI you registered in the Facebook Developer Portal
+# Must exactly match a URI you registered in Meta for Developers
 INSTAGRAM_REDIRECT_URI  = config('INSTAGRAM_REDIRECT_URI', default='http://localhost:5173/instagram/callback')
 
 # ---------------------------------------------------------------------------
@@ -207,6 +207,12 @@ if DEBUG:
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ]
+    _extra_dev_origins = config('CORS_ALLOWED_ORIGINS', default='')
+    if _extra_dev_origins:
+        for origin in _extra_dev_origins.split(','):
+            origin = origin.strip()
+            if origin and origin not in CORS_ALLOWED_ORIGINS:
+                CORS_ALLOWED_ORIGINS.append(origin)
 else:
     CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL_ORIGINS', default=True, cast=bool)
     _cors_origins = config('CORS_ALLOWED_ORIGINS', default='')
@@ -214,16 +220,3 @@ else:
         CORS_ALLOWED_ORIGINS = _cors_origins.split(',')
 
 CORS_ALLOW_CREDENTIALS = True
-
-# ---------------------------------------------------------------------------
-# Email Configuration
-# ---------------------------------------------------------------------------
-# If EMAIL_BACKEND is not set, defaults to SMTP if EMAIL_HOST is present, else Console
-_default_backend = 'django.core.mail.backends.smtp.EmailBackend' if config('EMAIL_HOST', default='') else 'django.core.mail.backends.console.EmailBackend'
-EMAIL_BACKEND       = config('EMAIL_BACKEND',       default=_default_backend)
-EMAIL_HOST          = config('EMAIL_HOST',          default='smtp.gmail.com')
-EMAIL_PORT          = config('EMAIL_PORT',          default=587, cast=int)
-EMAIL_USE_TLS       = config('EMAIL_USE_TLS',       default=True, cast=bool)
-EMAIL_HOST_USER     = config('EMAIL_HOST_USER',     default='')
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
-DEFAULT_FROM_EMAIL  = config('DEFAULT_FROM_EMAIL',  default=EMAIL_HOST_USER)
