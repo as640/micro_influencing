@@ -54,6 +54,24 @@ function PendingOrdersPage() {
     finally { setUpdating(null); }
   };
 
+  const handleVerifyWork = async (id) => {
+    setUpdating(id);
+    try {
+      await contractApi.updateStatus(id, 'work_verified');
+      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'work_verified' } : c));
+    } catch (err) { console.error(err); }
+    finally { setUpdating(null); }
+  };
+
+  const handlePaymentDone = async (id) => {
+    setUpdating(id);
+    try {
+      await contractApi.updateStatus(id, 'payment_done');
+      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'payment_done' } : c));
+    } catch (err) { console.error(err); }
+    finally { setUpdating(null); }
+  };
+
   const handleComplete = async (id) => {
     setUpdating(id);
     try {
@@ -128,8 +146,9 @@ function PendingOrdersPage() {
               razorpay_signature: response.razorpay_signature,
             });
             // Update local state
+            await contractApi.updateStatus(contract.id, 'payment_done');
             setContracts((prev) =>
-              prev.map((c) => c.id === contract.id ? { ...c, status: 'completed', payment_intent_id: response.razorpay_payment_id } : c)
+              prev.map((c) => c.id === contract.id ? { ...c, status: 'payment_done', payment_intent_id: response.razorpay_payment_id } : c)
             );
             setPaymentResult({ success: true, id: contract.id, paymentId: response.razorpay_payment_id });
           } catch (verifyErr) {
@@ -170,66 +189,75 @@ function PendingOrdersPage() {
   }
 
   return (
-    <section className="space-y-6 animate-fade-up">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Contracts &amp; Deals</h2>
-        <p className="mt-1 text-slate-400">Track your pending proposals, active jobs, and completed work.</p>
+    <section className="space-y-8 animate-fade-in font-sans">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between relative z-10">
+        <div>
+          <h2 className="text-3xl font-extrabold text-white font-display">Contracts &amp; Deals</h2>
+          <p className="mt-1.5 text-slate-400 font-medium">Track your pending proposals, active jobs, and completed work.</p>
+        </div>
       </div>
 
       {/* Payment result toast */}
       {paymentResult && (
-        <div className={`flex items-start gap-3 rounded-xl border px-5 py-4 text-sm ${paymentResult.success
-            ? 'border-emerald-700 bg-emerald-900/30 text-emerald-300'
-            : 'border-red-700 bg-red-900/30 text-red-300'
+        <div className={`flex items-start gap-4 rounded-2xl border px-6 py-5 text-sm shadow-xl animate-fade-down relative overflow-hidden backdrop-blur-md ${paymentResult.success
+            ? 'border-emerald-500/30 bg-emerald-900/20 text-emerald-300'
+            : 'border-red-500/30 bg-red-900/20 text-red-300'
           }`}>
-          <span className="text-lg">{paymentResult.success ? '✅' : '❌'}</span>
-          <div>
+          {paymentResult.success && <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-[40px] rounded-full pointer-events-none"></div>}
+          <span className="text-2xl relative z-10 bg-slate-900/50 p-2 rounded-full shadow-inner">{paymentResult.success ? '✅' : '❌'}</span>
+          <div className="relative z-10">
             {paymentResult.success ? (
               <>
-                <p className="font-semibold">Payment Successful!</p>
-                <p className="mt-0.5 text-xs opacity-70">ID: {paymentResult.paymentId}</p>
+                <p className="font-extrabold text-base text-white">Payment Successful!</p>
+                <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-emerald-400/80">Ref: {paymentResult.paymentId}</p>
               </>
             ) : (
-              <p className="font-semibold">Payment failed or was cancelled. Please try again.</p>
+              <p className="font-bold text-base text-white">Payment failed or was cancelled. Please try again.</p>
             )}
           </div>
-          <button onClick={() => setPaymentResult(null)} className="ml-auto text-slate-400 hover:text-white">✕</button>
+          <button onClick={() => setPaymentResult(null)} className="ml-auto text-slate-400 hover:text-white transition-colors relative z-10 bg-slate-900/50 hover:bg-slate-800 rounded-full p-1.5 flex items-center justify-center">✕</button>
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      {/* Stats Dashboard */}
+      <div className="grid gap-6 sm:grid-cols-3 relative z-10">
         {[
-          { label: 'Pending Proposals', count: pendingContracts.length, color: 'text-amber-300' },
-          { label: 'Active Jobs', count: activeContracts.length, color: 'text-blue-300' },
-          { label: 'Completed', count: completedContracts.length, color: 'text-emerald-300' },
-        ].map((s) => (
-          <article key={s.label} className="glow-hover rounded-xl border border-slate-800 bg-slate-900 p-5">
-            <p className="text-sm text-slate-400">{s.label}</p>
-            <p className={`mt-2 text-3xl font-bold ${s.color}`}>{s.count}</p>
+          { label: 'Pending Proposals', count: pendingContracts.length, color: 'text-amber-400', glow: 'bg-amber-500/10' },
+          { label: 'Active Jobs', count: activeContracts.length, color: 'text-blue-400', glow: 'bg-blue-500/10' },
+          { label: 'Completed', count: completedContracts.length, color: 'text-emerald-400', glow: 'bg-emerald-500/10' },
+        ].map((s, idx) => (
+          <article key={s.label} className="glow-hover glass-panel rounded-2xl p-6 relative overflow-hidden group" style={{ animationDelay: `${idx * 100}ms` }}>
+            <div className={`absolute -right-6 -top-6 h-32 w-32 rounded-full ${s.glow} blur-3xl group-hover:blur-2xl transition-all pointer-events-none`}></div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest relative z-10">{s.label}</p>
+            <p className={`mt-2 text-4xl font-extrabold font-display relative z-10 drop-shadow-sm ${s.color}`}>{s.count}</p>
           </article>
         ))}
       </div>
 
-      {/* Table */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900 shadow-sm">
-        <div className="border-b border-slate-800 px-5 py-4">
-          <h3 className="text-lg font-semibold text-white">All Contracts</h3>
+      {/* Table Container */}
+      <div className="glass-panel rounded-2xl shadow-xl overflow-hidden relative z-10 border border-slate-700/50 bg-slate-900/40 backdrop-blur-xl">
+        <div className="border-b border-slate-800/60 px-6 py-5 bg-slate-900/50 flex justify-between items-center">
+          <h3 className="text-xl font-extrabold text-white font-display">All Contracts</h3>
+          <span className="text-xs font-semibold px-3 py-1 bg-slate-800 rounded-full text-slate-400 border border-slate-700">{contracts.length} Total</span>
         </div>
 
         {contracts.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-slate-500">No contracts yet.</p>
+          <div className="px-6 py-16 flex flex-col items-center justify-center text-center">
+            <div className="h-16 w-16 rounded-full bg-slate-800/50 flex items-center justify-center mb-4 border border-slate-700/50 shadow-inner">📄</div>
+            <p className="text-base font-semibold text-slate-300">No contracts yet.</p>
+            <p className="text-sm text-slate-500 mt-1 max-w-sm">When you propose or receive a contract, it will appear here.</p>
+          </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-800">
-              <thead className="bg-slate-950">
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="min-w-full divide-y divide-slate-800/60">
+              <thead className="bg-slate-950/60 backdrop-blur-md">
                 <tr>
-                  {['ID', isInfluencer ? 'Business' : 'Influencer', 'Deliverables', 'Amount', 'Status', 'Actions'].map((h) => (
-                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                  {['Ref ID', isInfluencer ? 'Business' : 'Influencer', 'Deliverables', 'Amount', 'Status', 'Actions'].map((h) => (
+                    <th key={h} className="px-6 py-4 text-left text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800 bg-slate-900">
+              <tbody className="divide-y divide-slate-800/60 bg-transparent">
                 {contracts.map((c) => {
                   const otherParty = isInfluencer
                     ? (c.business_name || 'Business')
@@ -237,29 +265,29 @@ function PendingOrdersPage() {
                   const isPaying = paying === c.id;
                   const wasJustPaid = paymentResult?.success && paymentResult?.id === c.id;
                   return (
-                    <tr key={c.id} className="transition hover:bg-slate-800/40">
-                      <td className="px-5 py-4 text-xs font-mono text-slate-400">{c.id?.slice(0, 8)}…</td>
-                      <td className="px-5 py-4 text-sm text-slate-300">{otherParty}</td>
-                      <td className="px-5 py-4 max-w-[180px] truncate text-sm text-slate-300" title={c.deliverables}>{c.deliverables}</td>
-                      <td className="px-5 py-4 text-sm font-semibold text-white">₹{Number(c.agreed_price).toLocaleString('en-IN')}</td>
-                      <td className="px-5 py-4">
+                    <tr key={c.id} className="transition-colors hover:bg-slate-800/30 group">
+                      <td className="px-6 py-5 text-xs font-mono font-medium text-slate-500 group-hover:text-slate-400">{c.id?.slice(0, 8)}</td>
+                      <td className="px-6 py-5 text-sm font-bold text-slate-200">{otherParty}</td>
+                      <td className="px-6 py-5 max-w-[220px] truncate text-sm text-slate-400 font-medium" title={c.deliverables}>{c.deliverables}</td>
+                      <td className="px-6 py-5 text-sm font-extrabold text-white font-display tracking-tight">₹{Number(c.agreed_price).toLocaleString('en-IN')}</td>
+                      <td className="px-6 py-5">
                         <StatusBadge status={wasJustPaid ? 'paid' : c.status} />
                         {c.has_open_dispute && (
-                          <span className="ml-2 inline-flex items-center rounded-md bg-red-400/10 px-2 py-1 text-xs font-medium text-red-500 ring-1 ring-inset ring-red-400/20">
-                            DISPUTED
+                          <span className="ml-2 inline-flex items-center rounded-md bg-red-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-400 border border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]">
+                            Disputed
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-6 py-5">
                         {/* Influencer: accept or decline pending contracts */}
                         {c.status === 'pending' && isInfluencer && (
-                          <div className="flex gap-2">
+                          <div className="flex gap-2.5">
                             <button onClick={() => handleAccept(c.id)} disabled={updating === c.id}
-                              className="rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50">
+                              className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none">
                               Accept
                             </button>
                             <button onClick={() => handleCancel(c.id)} disabled={updating === c.id}
-                              className="rounded bg-slate-700 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:bg-slate-600 disabled:opacity-50">
+                              className="rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-1.5 text-xs font-bold text-slate-300 transition-all hover:bg-slate-700 hover:text-white hover:border-slate-600 disabled:opacity-50 disabled:pointer-events-none">
                               Decline
                             </button>
                           </div>
@@ -267,13 +295,13 @@ function PendingOrdersPage() {
 
                         {/* Influencer: active contract -> Submit Work */}
                         {c.status === 'active' && isInfluencer && (
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-2.5 items-center">
                             <button onClick={() => handleSubmitWork(c.id)} disabled={updating === c.id || c.has_open_dispute}
-                              className="rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50">
+                              className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none">
                               Submit Work
                             </button>
                             <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
-                              className="rounded border border-red-900/50 bg-red-900/20 px-3 py-1 text-xs font-semibold text-red-400 transition hover:bg-red-900/40">
+                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
                               Dispute
                             </button>
                           </div>
@@ -281,51 +309,96 @@ function PendingOrdersPage() {
 
                         {/* Business: active contract -> Awaiting Work */}
                         {c.status === 'active' && !isInfluencer && (
-                          <div className="flex flex-wrap gap-2 items-center">
-                            <span className="text-xs text-slate-500 italic pr-2">Awaiting work...</span>
+                          <div className="flex flex-wrap gap-2.5 items-center">
+                            <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500 pr-2 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-slate-600 animate-pulse"></span>Awaiting work...</span>
                             <button onClick={() => handleCancel(c.id)} disabled={updating === c.id || c.has_open_dispute}
-                              className="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-300 transition hover:bg-slate-700 disabled:opacity-50">
+                              className="rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-bold text-slate-300 transition-all hover:bg-slate-700 hover:text-white disabled:opacity-50 disabled:pointer-events-none">
                               Cancel
                             </button>
                             <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
-                              className="rounded border border-red-900/50 bg-red-900/20 px-3 py-1 text-xs font-semibold text-red-400 transition hover:bg-red-900/40">
+                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
                               Dispute
                             </button>
                           </div>
                         )}
 
-                        {/* Business: work_submitted -> Pay Now or Confirm */}
+                        {/* Business: work_submitted -> Verify Work */}
                         {c.status === 'work_submitted' && !isInfluencer && (
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-2.5">
+                            <button onClick={() => handleVerifyWork(c.id)} disabled={updating === c.id || c.has_open_dispute}
+                              className="rounded-lg border border-emerald-500/30 bg-emerald-900/20 px-3 py-1.5 text-xs font-bold text-emerald-400 transition-colors hover:bg-emerald-900/40 hover:text-emerald-300 disabled:opacity-50">
+                              ✓ Verify Work
+                            </button>
+                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
+                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
+                              Dispute
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Influencer: work_submitted -> Awaiting Verification */}
+                        {c.status === 'work_submitted' && isInfluencer && (
+                          <div className="flex flex-wrap gap-2.5 items-center">
+                            <span className="text-[10px] font-bold tracking-widest uppercase text-emerald-400 pr-2">Awaiting Verification</span>
+                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
+                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
+                              Dispute
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Business: work_verified -> Pay Now or Mark Paid */}
+                        {c.status === 'work_verified' && !isInfluencer && (
+                          <div className="flex flex-wrap gap-2.5">
                             <button onClick={() => handlePayNow(c)} disabled={isPaying || c.has_open_dispute}
-                              className="flex items-center gap-1.5 rounded bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-md shadow-indigo-900/40 transition hover:from-violet-500 hover:to-indigo-500 disabled:opacity-50">
+                              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/20 transition-all hover:bg-emerald-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none glow-hover">
                               {isPaying ? <span className="animate-pulse">Processing…</span> : <>💳 Pay Now</>}
                             </button>
-                            <button onClick={() => handleComplete(c.id)} disabled={updating === c.id || c.has_open_dispute}
-                              className="rounded bg-emerald-700 px-3 py-1 text-xs font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50">
-                              ✓ Verify Manually
+                            <button onClick={() => handlePaymentDone(c.id)} disabled={updating === c.id || c.has_open_dispute}
+                              className="rounded-lg border border-emerald-500/30 bg-emerald-900/20 px-3 py-1.5 text-xs font-bold text-emerald-400 transition-colors hover:bg-emerald-900/40 hover:text-emerald-300 disabled:opacity-50">
+                              ✓ Mark Paid Manually
                             </button>
                             <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
-                              className="rounded border border-red-900/50 bg-red-900/20 px-3 py-1 text-xs font-semibold text-red-400 transition hover:bg-red-900/40">
+                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
                               Dispute
                             </button>
                           </div>
                         )}
 
-                        {/* Influencer: work_submitted -> Awaiting Payment / Verification */}
-                        {c.status === 'work_submitted' && isInfluencer && (
-                          <div className="flex flex-wrap gap-2 items-center">
-                            <span className="text-xs text-emerald-400 font-semibold italic pr-2">Work Submitted. Awaiting verification/payment.</span>
+                        {/* Influencer: work_verified -> Awaiting Payment */}
+                        {c.status === 'work_verified' && isInfluencer && (
+                          <div className="flex flex-wrap gap-2.5 items-center">
+                            <span className="text-[10px] font-bold tracking-widest uppercase text-emerald-400 pr-2">Awaiting Payment</span>
+                          </div>
+                        )}
+
+                        {/* Influencer: payment_done -> Confirm Completion */}
+                        {c.status === 'payment_done' && isInfluencer && (
+                          <div className="flex flex-wrap gap-2.5 items-center">
+                            <button onClick={() => handleComplete(c.id)} disabled={updating === c.id || c.has_open_dispute}
+                              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/20 transition-all hover:bg-emerald-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none glow-hover">
+                              ✓ Confirm Completion
+                            </button>
                             <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
-                              className="rounded border border-red-900/50 bg-red-900/20 px-3 py-1 text-xs font-semibold text-red-400 transition hover:bg-red-900/40">
+                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
                               Dispute
                             </button>
+                          </div>
+                        )}
+
+                        {/* Business: payment_done -> Awaiting Influencer Confirmation */}
+                        {c.status === 'payment_done' && !isInfluencer && (
+                          <div className="flex flex-wrap gap-2.5 items-center">
+                            <span className="text-[10px] font-bold tracking-widest uppercase text-emerald-400 pr-2">Awaiting Influencer Receipt</span>
                           </div>
                         )}
 
                         {/* Completed / paid */}
                         {(c.status === 'completed' || wasJustPaid) && (
-                          <span className="text-xs text-emerald-400 font-semibold">✓ Done</span>
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold uppercase tracking-widest text-emerald-400 shadow-inner">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                            Done
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -337,7 +410,7 @@ function PendingOrdersPage() {
         )}
       </div>
 
-      {/* Razorpay Setup Notice (only shown when key is missing) */}
+      {/* Razorpay Setup Notice */}
       {!RAZORPAY_KEY_ID && !isInfluencer && (
         <div className="rounded-xl border border-amber-700/40 bg-amber-900/20 px-5 py-4 text-sm text-amber-300">
           <p className="font-semibold">⚠️ Razorpay not configured</p>

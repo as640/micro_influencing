@@ -291,9 +291,9 @@ class CampaignListCreateView(ListCreateAPIView):
                 raise ValidationError({'business_id': 'No business profile found. Please create or specify one.'})
         
         # Conflict Guard: Business cannot post campaign if involved in open dispute
-        if Dispute.objects.filter(contract__business=business, status='open').exists():
+        if user.has_open_disputes:
             from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied('You have an open dispute. Please resolve it before posting new campaigns.')
+            raise PermissionDenied('Your account has an open dispute. Please resolve it before posting new campaigns.')
 
         serializer.save(business=business)
 
@@ -393,10 +393,17 @@ class ConversationListCreateView(APIView):
         else:
             return Response({'error': 'Invalid role.'}, status=status.HTTP_403_FORBIDDEN)
 
-        # Conflict Guard: Blocks communication if there is an active dispute between them
-        if Dispute.objects.filter(contract__business=business, contract__influencer=influencer, status='open').exists():
+        # Conflict Guard: Blocks communication if either user has ANY active dispute
+        if user.has_open_disputes:
             return Response(
-                {'error': 'You have an open dispute with this user. Communication is blocked until it is resolved.'},
+                {'error': 'Your account has an open dispute. Communication is disabled until it is resolved.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        other_user = influencer.user if user.role == 'business' or user.is_superuser else business.user
+        if other_user.has_open_disputes:
+            return Response(
+                {'error': 'This user is currently unable to receive new messages due to an open dispute on their account.'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -454,6 +461,12 @@ class MessageCreateView(APIView):
     def post(self, request, pk):
         conversation = get_object_or_404(Conversation, pk=pk)
         self.check_object_permissions(request, conversation)
+
+        if request.user.has_open_disputes:
+            return Response(
+                {'error': 'Your account has an open dispute. Sending messages is disabled until it is resolved.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         content = request.data.get('content', '').strip()
         if not content:
@@ -616,8 +629,12 @@ class ContractStatusView(APIView):
         (ContractStatus.PENDING,        ContractStatus.CANCELLED):       'any',
         (ContractStatus.ACTIVE,         ContractStatus.WORK_SUBMITTED):  'influencer',
         (ContractStatus.ACTIVE,         ContractStatus.CANCELLED):       'any',
-        (ContractStatus.WORK_SUBMITTED, ContractStatus.COMPLETED):       'business',
+        (ContractStatus.WORK_SUBMITTED, ContractStatus.WORK_VERIFIED):   'business',
         (ContractStatus.WORK_SUBMITTED, ContractStatus.CANCELLED):       'any',
+        (ContractStatus.WORK_VERIFIED,  ContractStatus.PAYMENT_DONE):    'business',
+        (ContractStatus.WORK_VERIFIED,  ContractStatus.CANCELLED):       'any',
+        (ContractStatus.PAYMENT_DONE,   ContractStatus.COMPLETED):       'influencer',
+        (ContractStatus.PAYMENT_DONE,   ContractStatus.CANCELLED):       'any',
     }
 
     def patch(self, request, pk):

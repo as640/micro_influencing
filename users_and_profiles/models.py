@@ -24,6 +24,8 @@ class ContractStatus(models.TextChoices):
     PENDING        = 'pending',        'Pending'
     ACTIVE         = 'active',         'Active'
     WORK_SUBMITTED = 'work_submitted', 'Work Submitted'
+    WORK_VERIFIED  = 'work_verified',  'Work Verified'
+    PAYMENT_DONE   = 'payment_done',   'Payment Done'
     COMPLETED      = 'completed',      'Completed'
     CANCELLED      = 'cancelled',      'Cancelled'
 
@@ -97,6 +99,15 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     USERNAME_FIELD  = 'email'
     REQUIRED_FIELDS = ['role']
+
+    @property
+    def has_open_disputes(self):
+        from .models import Dispute
+        if self.role == UserRole.BUSINESS:
+            return Dispute.objects.filter(contract__business__user=self, status='open').exists()
+        elif self.role == UserRole.INFLUENCER:
+            return Dispute.objects.filter(contract__influencer__user=self, status='open').exists()
+        return False
 
     class Meta:
         db_table = 'users'

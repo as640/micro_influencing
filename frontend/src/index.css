@@ -5,35 +5,78 @@
 @layer base {
   body {
     @apply bg-slate-950 text-slate-100 antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', sans-serif;
+  }
+  
+  /* Custom modern scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-800 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-700;
   }
 }
 
 @layer utilities {
+  .glass-panel {
+    @apply bg-slate-900/50 backdrop-blur-md border border-slate-800/60 shadow-xl;
+  }
+
+  .glass-card {
+    @apply bg-white/[0.02] backdrop-blur-lg border border-white/[0.05] shadow-2xl;
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-violet-400;
+  }
+
   .animate-fade-up {
-    animation: fadeUp 700ms ease-out both;
+    animation: fadeUp 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
   .animate-fade-in {
-    animation: fadeIn 700ms ease-out both;
+    animation: fadeIn 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
   .animate-float {
-    animation: float 4s ease-in-out infinite;
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-pulse-slow {
+    animation: pulseSlow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .bg-mesh {
+    background-color: #020617;
+    background-image: 
+      radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+      radial-gradient(at 50% 0%, hsla(225,39%,30%,0.2) 0, transparent 50%), 
+      radial-gradient(at 100% 0%, hsla(339,49%,30%,0.2) 0, transparent 50%);
   }
 
   .animate-gradient {
-    background-size: 220% 220%;
-    animation: gradientShift 8s ease infinite;
+    background-size: 200% auto;
+    animation: shine 4s linear infinite;
   }
 
   .glow-hover {
-    transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+    transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 300ms cubic-bezier(0.16, 1, 0.3, 1), border-color 300ms ease;
   }
 
   .glow-hover:hover {
     transform: translateY(-4px);
-    box-shadow: 0 18px 35px -18px rgba(99, 102, 241, 0.45);
-    border-color: rgb(79 70 229 / 0.7);
+    box-shadow: 0 20px 40px -15px rgba(99, 102, 241, 0.3);
+    border-color: rgba(99, 102, 241, 0.5);
   }
 }
 

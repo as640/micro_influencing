@@ -78,6 +78,13 @@ class RegisterSerializer(serializers.ModelSerializer):
                         {field: f'GST verification required for business registration.'}
                     )
             
+            # Ensure GSTIN uniqueness before hitting the Setu API
+            gstin = attrs['gstin']
+            if BusinessProfile.objects.filter(gstin=gstin).exists():
+                raise serializers.ValidationError(
+                    {'gstin': 'This GST number is already registered to another business account.'}
+                )
+            
             # Execute synchronous GST Auth call to block unauthorized CustomUser creations
             from . import setu_service
             try:

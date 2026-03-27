@@ -150,34 +150,50 @@ function MessagesPage() {
 
   return (
     // Use fixed height capped to the viewport so chat scrolls inside, not the page
-    <section className="flex flex-col rounded-2xl border border-slate-800 bg-slate-900 shadow-sm animate-fade-up overflow-hidden" style={{ height: 'calc(100vh - 9rem)', minHeight: '560px' }}>
-      <div className="grid h-full overflow-hidden md:grid-cols-[290px_1fr]">
+    <section className="flex flex-col rounded-3xl border border-slate-700/50 bg-slate-900/60 backdrop-blur-2xl shadow-2xl animate-fade-up overflow-hidden relative font-sans" style={{ height: 'calc(100vh - 8rem)', minHeight: '600px' }}>
+      
+      {/* Background Glows for Depth */}
+      <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-indigo-500/10 blur-[100px] rounded-full pointer-events-none z-0"></div>
+      <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-violet-500/10 blur-[100px] rounded-full pointer-events-none z-0"></div>
+      
+      <div className="grid h-full overflow-hidden md:grid-cols-[320px_1fr] relative z-10">
         {/* Sidebar */}
-        <aside className="flex flex-col border-b border-slate-800 bg-slate-950/70 md:border-b-0 md:border-r md:border-slate-800 overflow-hidden">
-          <div className="shrink-0 border-b border-slate-800 px-4 py-4">
-            <h2 className="text-lg font-semibold text-white">Messages</h2>
-            <p className="text-sm text-slate-400">{convos.length} active thread{convos.length !== 1 ? 's' : ''}</p>
+        <aside className="flex flex-col border-b border-slate-700/50 bg-slate-950/40 md:border-b-0 md:border-r md:border-slate-700/50 overflow-hidden">
+          <div className="shrink-0 border-b border-slate-700/50 px-5 py-5 bg-slate-900/50 backdrop-blur-md">
+            <h2 className="text-xl font-extrabold text-white font-display tracking-tight">Messages</h2>
+            <p className="text-xs font-semibold text-indigo-400 mt-0.5 uppercase tracking-wider">{convos.length} active thread{convos.length !== 1 ? 's' : ''}</p>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
             {convos.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-slate-500">No conversations yet.</p>
+              <div className="flex flex-col items-center justify-center p-8 text-center mt-10">
+                <div className="h-12 w-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">💬</div>
+                <p className="text-sm font-semibold text-slate-400">No conversations yet.</p>
+              </div>
             ) : (
               convos.map((convo) => {
                 const isActive = convo.id === selectedId;
                 return (
                   <button key={convo.id} type="button" onClick={() => setSelectedId(convo.id)}
-                    className={`w-full border-b border-slate-800 px-4 py-3 text-left transition ${isActive ? 'bg-indigo-600/20' : 'hover:bg-slate-800/60'}`}
+                    className={`w-full border-b border-slate-800/60 px-5 py-4 text-left transition-all duration-200 relative ${isActive ? 'bg-indigo-600/10' : 'hover:bg-slate-800/40'}`}
                   >
+                    {isActive && <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500 rounded-r-md"></div>}
                     <div className="flex items-start justify-between gap-3">
-                      <p className="font-semibold text-white">{getOtherParty(convo)}</p>
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 shrink-0 rounded-full border border-slate-700 bg-slate-800 overflow-hidden shadow-inner">
+                          <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${getOtherParty(convo)}`} alt="Avatar" className="h-full w-full object-cover" />
+                        </div>
+                        <div>
+                          <p className={`font-bold truncate ${isActive ? 'text-indigo-100' : 'text-slate-200'}`}>{getOtherParty(convo)}</p>
+                          <p className={`mt-0.5 text-xs truncate max-w-[140px] ${isActive ? 'text-indigo-300/80 font-medium' : 'text-slate-500'}`}>{getLastMessageText(convo)}</p>
+                        </div>
+                      </div>
                       {convo.unread_count > 0 && (
-                        <span className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-bold text-white">
+                        <span className="shrink-0 rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] font-extrabold text-white shadow-[0_0_10px_rgba(99,102,241,0.5)]">
                           {convo.unread_count}
                         </span>
                       )}
                     </div>
-                    <p className="mt-1 truncate text-sm text-slate-400">{getLastMessageText(convo)}</p>
                   </button>
                 );
               })
@@ -186,58 +202,78 @@ function MessagesPage() {
         </aside>
 
         {/* Chat panel */}
-        <div className="flex h-full flex-col overflow-hidden">
+        <div className="flex h-full flex-col overflow-hidden bg-slate-900/20">
           {activeConvo ? (
             <>
               {/* Chat Header */}
-              <header className="shrink-0 flex items-center justify-between border-b border-slate-800 px-5 py-3">
-                <div>
-                  <p className="text-base font-semibold text-white">{getOtherParty(activeConvo)}</p>
-                  <p className="text-xs text-slate-500">Conversation · <span className="text-emerald-400">● Live</span></p>
+              <header className="shrink-0 flex flex-wrap items-center justify-between border-b border-slate-700/50 bg-slate-900/50 backdrop-blur-md px-6 py-4 gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 shrink-0 rounded-full border-2 border-slate-700 bg-slate-800 overflow-hidden shadow-lg relative">
+                    <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${getOtherParty(activeConvo)}`} alt="Avatar" className="h-full w-full object-cover" />
+                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border border-slate-900 rounded-full blur-[1px]"></div>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-white font-display drop-shadow-sm">{getOtherParty(activeConvo)}</h3>
+                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mt-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Live Chat
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   {/* Contract Success Badge */}
                   {contractSuccess && (
-                    <span className="rounded-full bg-emerald-900/50 px-3 py-1 text-xs font-semibold text-emerald-400">
-                      ✓ Contract Proposed
+                    <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-xs font-bold text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.1)] flex items-center gap-1.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                      Proposal Sent
                     </span>
                   )}
                   {/* "Propose Contract" button — only for businesses + superadmin */}
                   {isBusiness && (
                     <button
                       onClick={() => setShowContractModal(true)}
-                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500"
+                      className="rounded-xl border border-emerald-500/30 bg-emerald-600/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-emerald-400 transition-all hover:bg-emerald-600 hover:text-white glow-hover shadow-[0_0_15px_rgba(16,185,129,0.1)]"
                     >
-                      📋 Propose Contract
+                      Propose Contract
                     </button>
                   )}
                   {/* Influencer: shortcut to view their pending orders */}
                   {!isBusiness && (
                     <button
                       onClick={() => navigate('/dashboard/pending-orders')}
-                      className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700"
+                      className="rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-300 transition-all hover:bg-slate-700 shadow-sm"
                     >
-                      View Contract Offers
+                      View Contracts
                     </button>
                   )}
                 </div>
               </header>
 
-              {/* Messages — this must flex-1 and overflow-y-auto to scroll properly */}
-              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4 custom-scrollbar">
                 {thread === null ? (
-                  <p className="text-center text-sm text-slate-500">Loading…</p>
+                  <div className="flex flex-col h-full items-center justify-center">
+                    <p className="text-sm font-semibold text-slate-500 animate-pulse-slow">Syncing thread…</p>
+                  </div>
                 ) : thread.messages?.length === 0 ? (
-                  <p className="text-center text-sm text-slate-500">No messages yet. Say hello! 👋</p>
+                  <div className="flex flex-col h-full items-center justify-center space-y-3">
+                    <div className="p-4 rounded-full bg-indigo-500/10 mb-2 shadow-[0_0_30px_rgba(99,102,241,0.1)]">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-400/80" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                    </div>
+                    <p className="text-base font-bold text-slate-300 font-display">No messages yet</p>
+                    <p className="text-sm text-slate-500">Send a message to start the collaboration.</p>
+                  </div>
                 ) : (
                   thread.messages?.map((msg, i) => {
                     const isMe = msg.sender_email === user?.email;
                     return (
-                      <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm md:max-w-[70%] ${isMe ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30'
-                          : 'border border-slate-700 bg-slate-800 text-slate-100'}`}>
-                          <p>{msg.content}</p>
-                          <p className={`mt-1 text-[11px] ${isMe ? 'text-indigo-200' : 'text-slate-500'}`}>
+                      <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+                        <div className={`max-w-[85%] md:max-w-[70%] group flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                          <div className={`px-5 py-3 text-sm rounded-2xl ${isMe 
+                            ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-tr-sm shadow-[0_5px_15px_rgba(99,102,241,0.2)]'
+                            : 'border border-slate-700/50 bg-slate-800/80 backdrop-blur-sm text-slate-100 rounded-tl-sm shadow-sm'}`}>
+                            <p className="leading-relaxed">{msg.content}</p>
+                          </div>
+                          <p className={`mt-1.5 text-[10px] font-semibold uppercase tracking-widest px-1 opacity-0 group-hover:opacity-100 transition-opacity ${isMe ? 'text-indigo-400/80' : 'text-slate-500'}`}>
                             {formatTime(msg.created_at)}
                           </p>
                         </div>
@@ -245,31 +281,41 @@ function MessagesPage() {
                     );
                   })
                 )}
-                {/* Scroll anchor — always at the bottom */}
                 <div ref={bottomRef} />
               </div>
 
               {/* Message input */}
-              <form className="shrink-0 border-t border-slate-800 p-4" onSubmit={handleSend}>
-                <div className="flex gap-2">
+              <form className="shrink-0 border-t border-slate-700/50 bg-slate-900/80 backdrop-blur-xl p-5" onSubmit={handleSend}>
+                <div className="flex items-end gap-3 rounded-2xl border border-slate-700/50 bg-slate-950/50 p-2 shadow-inner transition-all focus-within:border-indigo-500/50 focus-within:bg-slate-950/80 focus-within:ring-1 focus-within:ring-indigo-500/50">
                   <textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
+                    placeholder="Type your message... (Enter to send)"
                     rows={1}
-                    className="w-full resize-none rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/40"
+                    className="w-full resize-none bg-transparent px-4 py-3 text-sm text-slate-100 outline-none max-h-32 custom-scrollbar placeholder:text-slate-500"
                   />
-                  <button type="submit" disabled={sending || !draft.trim()}
-                    className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50">
-                    {sending ? '…' : 'Send'}
-                  </button>
+                  <div className="pb-1 pr-1">
+                    <button type="submit" disabled={sending || !draft.trim()}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:pointer-events-none glow-hover">
+                      {sending ? '...' : (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 ml-0.5">
+                          <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </form>
             </>
           ) : (
-            <div className="flex flex-1 items-center justify-center text-slate-500">
-              Select a conversation to start chatting
+            <div className="flex flex-col h-full items-center justify-center text-center p-8 relative">
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-indigo-500/5 blur-[80px] rounded-full pointer-events-none"></div>
+              <div className="h-16 w-16 rounded-2xl bg-slate-800/50 border border-slate-700/50 flex items-center justify-center mb-5 rotate-12 shadow-xl backdrop-blur-sm z-10">
+                <span className="text-3xl -rotate-12">💬</span>
+              </div>
+              <h3 className="text-xl font-extrabold text-white font-display z-10">Your Messages</h3>
+              <p className="mt-2 text-sm text-slate-400 font-medium max-w-xs z-10">Select a conversation from the sidebar to view history or start chatting.</p>
             </div>
           )}
         </div>
