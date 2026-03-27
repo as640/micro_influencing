@@ -34,7 +34,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.generics import (
     ListAPIView, RetrieveAPIView,
-    ListCreateAPIView, RetrieveUpdateAPIView,
+    ListCreateAPIView, RetrieveUpdateAPIView, RetrieveUpdateDestroyAPIView,
 )
 
 from rest_framework_simplejwt.tokens import RefreshToken
