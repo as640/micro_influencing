@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { authApi, instagramApi } from '../api';
 
 function AccountInfoPage() {
-  const { user, login } = useAuth(); // using login internally to update the AuthContext
+  const { user, replaceUser } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -50,7 +50,7 @@ function AccountInfoPage() {
       // Send the PATCH request to update the profile
       const updatedUser = await authApi.updateProfile(form);
       // Update global context with the fresh full user object
-      login(updatedUser);
+      replaceUser(updatedUser);
       setIsEditing(false);
     } catch (err) {
       console.error('Failed to update profile', err);
@@ -66,7 +66,7 @@ function AccountInfoPage() {
     setPayoutSaved(false);
     try {
       const updatedUser = await authApi.updateProfile(payoutForm);
-      login(updatedUser);
+      replaceUser(updatedUser);
       setPayoutSaved(true);
       setTimeout(() => setPayoutSaved(false), 3000);
     } catch (err) {

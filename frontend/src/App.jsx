@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import DashboardLayout from './components/DashboardLayout';
 import AccountInfoPage from './pages/AccountInfoPage';
 import BrandingPage from './pages/BrandingPage';
@@ -21,10 +21,21 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import MyBusinessesPage from './pages/MyBusinessesPage';
 
+function RootPage() {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+
+  if (params.has('code') || params.has('error') || params.has('error_description')) {
+    return <InstagramCallbackPage />;
+  }
+
+  return <BrandingPage />;
+}
+
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<BrandingPage />} />
+      <Route path="/" element={<RootPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -67,9 +78,6 @@ function App() {
         <Route path="find-campaigns" element={<FindCampaignsPage />} />
         <Route path="superadmin" element={<SuperadminDashboardPage />} />
       </Route>
-
-      {/* Verification Engine OAuth Callback */}
-      <Route path="/instagram/callback" element={<InstagramCallbackPage />} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

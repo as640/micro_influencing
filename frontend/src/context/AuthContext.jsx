@@ -42,8 +42,13 @@ export function AuthProvider({ children }) {
         navigate('/login');
     }, [navigate]);
 
+    const replaceUser = useCallback((nextUser) => {
+        setUser(nextUser);
+        return nextUser;
+    }, []);
+
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout }}>
+        <AuthContext.Provider value={{ user, loading, login, logout, replaceUser }}>
             {children}
         </AuthContext.Provider>
     );
