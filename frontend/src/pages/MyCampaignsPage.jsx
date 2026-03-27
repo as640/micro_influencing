@@ -79,6 +79,27 @@ function MyCampaignsPage() {
         }
     };
 
+    const handleToggleStatus = async (campId, currentStatus) => {
+        try {
+            await campaignApi.update(campId, { is_active: !currentStatus });
+            setCampaigns(campaigns.map(c => c.id === campId ? { ...c, is_active: !currentStatus } : c));
+        } catch (err) {
+            console.error('Failed to update campaign status', err);
+            alert('Could not update status.');
+        }
+    };
+
+    const handleDelete = async (campId) => {
+        if (!window.confirm('Are you sure you want to permanently delete this campaign?\nContracts will remain but lose the linked campaign name.')) return;
+        try {
+            await campaignApi.delete(campId);
+            setCampaigns(campaigns.filter(c => c.id !== campId));
+        } catch (err) {
+            console.error('Failed to delete campaign', err);
+            alert('Could not delete campaign.');
+        }
+    };
+
     if (user?.role !== 'business' && !user?.is_superuser) {
         return (
             <div className="flex h-48 items-center justify-center text-slate-400">
@@ -181,22 +202,42 @@ function MyCampaignsPage() {
             ) : (
                 <div className="grid gap-6">
                     {campaigns.map((camp) => (
-                        <div key={camp.id} className="rounded-xl border border-slate-800 bg-slate-900 p-6 flex flex-col md:flex-row gap-6 md:items-center justify-between">
-                            <div className="flex-1">
-                                <div className="flex items-center gap-3 mb-2">
-                                    <h3 className="text-xl font-bold text-white">{camp.title}</h3>
-                                    {camp.is_active ?
-                                        <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-400 uppercase">Active</span> :
-                                        <span className="rounded bg-slate-500/10 px-2 py-0.5 text-xs font-semibold text-slate-400 uppercase">Closed</span>
-                                    }
+                        <div key={camp.id} className="rounded-xl border border-slate-800 bg-slate-900 p-6 flex flex-col gap-4">
+                            <div className="flex flex-col md:flex-row gap-6 md:items-center justify-between">
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <h3 className="text-xl font-bold text-white">{camp.title}</h3>
+                                        {camp.is_active ?
+                                            <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-400 uppercase">Active</span> :
+                                            <span className="rounded bg-slate-500/10 px-2 py-0.5 text-xs font-semibold text-slate-400 uppercase">Closed</span>
+                                        }
+                                    </div>
+                                    <p className="text-sm font-medium text-slate-400 mb-2">{camp.required_ad_type.replace('_', ' ').toUpperCase()}</p>
+                                    <p className="text-sm text-slate-300 max-w-3xl line-clamp-2">{camp.description}</p>
                                 </div>
-                                <p className="text-sm font-medium text-slate-400 mb-2">{camp.required_ad_type.replace('_', ' ').toUpperCase()}</p>
-                                <p className="text-sm text-slate-300 max-w-3xl line-clamp-2">{camp.description}</p>
+                                <div className="whitespace-nowrap md:text-right shrink-0">
+                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Budget</p>
+                                    <p className="text-lg font-bold text-emerald-400">₹{formatNumber(camp.budget_min)} - ₹{formatNumber(camp.budget_max)}</p>
+                                    <p className="text-xs text-slate-500 mt-2">Posted on {new Date(camp.created_at).toLocaleDateString()}</p>
+                                </div>
                             </div>
-                            <div className="whitespace-nowrap md:text-right shrink-0">
-                                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Budget</p>
-                                <p className="text-lg font-bold text-emerald-400">₹{formatNumber(camp.budget_min)} - ₹{formatNumber(camp.budget_max)}</p>
-                                <p className="text-xs text-slate-500 mt-2">Posted on {new Date(camp.created_at).toLocaleDateString()}</p>
+                            <div className="flex items-center justify-end gap-3 border-t border-slate-800/60 pt-4 mt-2">
+                                <button
+                                    onClick={() => handleToggleStatus(camp.id, camp.is_active)}
+                                    className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${
+                                        camp.is_active 
+                                            ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' 
+                                            : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                                    }`}
+                                >
+                                    {camp.is_active ? 'Deactivate' : 'Reactivate'}
+                                </button>
+                                <button
+                                    onClick={() => handleDelete(camp.id)}
+                                    className="rounded-lg bg-red-500/10 px-4 py-1.5 text-sm font-semibold text-red-500 transition hover:bg-red-500/20"
+                                >
+                                    Delete
+                                </button>
                             </div>
                         </div>
                     ))}

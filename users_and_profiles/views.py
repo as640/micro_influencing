@@ -285,7 +285,7 @@ class CampaignListCreateView(ListCreateAPIView):
         serializer.save(business=business)
 
 
-class CampaignDetailView(RetrieveUpdateAPIView):
+class CampaignDetailView(RetrieveUpdateDestroyAPIView):
     serializer_class = CampaignSerializer
     queryset         = Campaign.objects.select_related('business').all()
 
@@ -302,6 +302,15 @@ class CampaignDetailView(RetrieveUpdateAPIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        campaign = self.get_object()
+        if not request.user.is_superuser and campaign.business.user != request.user:
+            return Response(
+                {'error': 'You can only delete your own campaigns.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().destroy(request, *args, **kwargs)
 
 
 # ===========================================================================

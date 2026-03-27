@@ -94,6 +94,8 @@ export const campaignApi = {
     list: (params = '') => request('GET', `/campaigns/${params ? '?' + params : ''}`),
     detail: (id) => request('GET', `/campaigns/${id}/`),
     create: (data) => request('POST', '/campaigns/', data),
+    update: (id, data) => request('PATCH', `/campaigns/${id}/`, data),
+    delete: (id) => request('DELETE', `/campaigns/${id}/`),
 };
 
 // ─── Messaging ────────────────────────────────────────────────────────────────

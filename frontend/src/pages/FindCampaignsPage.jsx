@@ -171,13 +171,28 @@ function FindCampaignsPage() {
                                 </div>
                             </div>
 
-                            <button
-                                onClick={() => handleApply(camp.business_info?.id, camp.id)}
-                                disabled={applyingTo === camp.id}
-                                className="w-full rounded-lg bg-indigo-600 py-3 font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
-                            >
-                                {applyingTo === camp.id ? 'Connecting...' : "I'm Interested"}
-                            </button>
+                            {(() => {
+                                const infCategory = (user?.influencer_profile?.category || '').trim().toLowerCase();
+                                const bizIndustry = (camp.business_info?.industry || '').trim().toLowerCase();
+                                // Superadmins bypass this check to test freely
+                                const isDomainMatch = user?.is_superuser || infCategory === bizIndustry;
+
+                                return (
+                                    <button
+                                        onClick={() => handleApply(camp.business_info?.id, camp.id)}
+                                        disabled={!isDomainMatch || applyingTo === camp.id}
+                                        className="w-full rounded-lg bg-indigo-600 py-3 font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title={!isDomainMatch ? `You are in ${user?.influencer_profile?.category}, but this campaign needs ${camp.business_info?.industry}` : ''}
+                                    >
+                                        {!isDomainMatch 
+                                            ? `Domain Mismatch (${camp.business_info?.industry})` 
+                                            : applyingTo === camp.id 
+                                                ? 'Connecting...' 
+                                                : "I'm Interested"
+                                        }
+                                    </button>
+                                );
+                            })()}
                         </div>
                     ))}
                 </div>
