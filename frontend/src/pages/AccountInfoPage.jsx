@@ -67,7 +67,11 @@ function AccountInfoPage() {
       const payload = { ...form };
       ['followers_count', 'price_min', 'price_max'].forEach(field => {
         if (payload[field] === '') {
-          payload[field] = null;
+          if (field === 'followers_count') {
+            delete payload[field];
+          } else {
+            payload[field] = null;
+          }
         }
       });
 
@@ -200,7 +204,7 @@ function AccountInfoPage() {
                 <span className="mb-2 block text-sm font-medium text-slate-500 uppercase tracking-wide">Category</span>
                 <select name="category" value={form.category} onChange={handleChange} disabled={!isEditing}
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none transition focus:border-indigo-500 disabled:opacity-60 disabled:bg-slate-950 disabled:border-slate-800">
-                  {['lifestyle', 'fitness', 'food', 'tech', 'fashion', 'travel', 'beauty', 'gaming', 'other'].map(c => (
+                  {['lifestyle', 'fitness', 'food', 'tech', 'fashion', 'travel', 'beauty', 'gaming', 'finance', 'other'].map(c => (
                     <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
                   ))}
                 </select>
@@ -278,7 +282,7 @@ function AccountInfoPage() {
                 <span className="mb-2 block text-sm font-medium text-slate-500 uppercase tracking-wide">Industry</span>
                 <select name="industry" value={form.industry} onChange={handleChange} disabled={!isEditing}
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-100 outline-none transition focus:border-indigo-500 disabled:opacity-60 disabled:bg-slate-950 disabled:border-slate-800">
-                  {['tech', 'fitness', 'skincare', 'clothing', 'finance', 'other'].map(c => (
+                  {['lifestyle', 'fitness', 'food', 'tech', 'fashion', 'travel', 'beauty', 'gaming', 'finance', 'other'].map(c => (
                     <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
                   ))}
                 </select>

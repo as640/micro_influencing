@@ -8,17 +8,24 @@ const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 async function request(method, path, body = null, auth = true) {
-    const headers = { 'Content-Type': 'application/json' };
+    const isFormData = body instanceof FormData;
+    const headers = {};
+    if (!isFormData) {
+        headers['Content-Type'] = 'application/json';
+    }
+    
     if (auth) {
         const token = localStorage.getItem('access_token');
         if (token) headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const res = await fetch(`${BASE}${path}`, {
+    const fetchOptions = {
         method,
         headers,
-        body: body ? JSON.stringify(body) : undefined,
-    });
+        body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
+    };
+
+    const res = await fetch(`${BASE}${path}`, fetchOptions);
 
     // If 401 and there's a refresh token, attempt silent refresh
     if (res.status === 401 && auth) {
@@ -26,11 +33,8 @@ async function request(method, path, body = null, auth = true) {
         if (refreshed) {
             // Retry the original request with new token
             headers['Authorization'] = `Bearer ${localStorage.getItem('access_token')}`;
-            const retry = await fetch(`${BASE}${path}`, {
-                method,
-                headers,
-                body: body ? JSON.stringify(body) : undefined,
-            });
+            fetchOptions.headers = headers;
+            const retry = await fetch(`${BASE}${path}`, fetchOptions);
             if (!retry.ok) throw await retry.json().catch(() => ({ detail: 'Request failed' }));
             return retry.json();
         }
@@ -82,18 +86,10 @@ export const authApi = {
     logout: (refresh) => request('POST', '/auth/logout/', { refresh }),
     me: () => request('GET', '/auth/me/'),
     updateProfile: (data) => request('PATCH', '/auth/me/', data),
-    uploadProfilePicture: async (file) => {
-        const token = localStorage.getItem('access_token');
+    uploadProfilePicture: (file) => {
         const formData = new FormData();
         formData.append('profile_picture', file);
-        
-        const res = await fetch(`${BASE}/auth/me/`, {
-            method: 'PATCH',
-            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-            body: formData,
-        });
-        if (!res.ok) throw await res.json().catch(() => ({ detail: 'Upload failed' }));
-        return res.json();
+        return request('PATCH', '/auth/me/', formData);
     },
 };
 
