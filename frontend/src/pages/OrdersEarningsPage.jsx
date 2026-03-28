@@ -71,8 +71,8 @@ function OrdersEarningsPage() {
               <tbody className="divide-y divide-slate-800 bg-slate-900">
                 {contracts.map((c) => {
                   const party = isInfluencer
-                    ? (c.business?.company_name || 'Business')
-                    : (c.influencer?.instagram_handle || 'Influencer');
+                    ? (c.business_name || 'Business')
+                    : (c.influencer_handle || 'Influencer');
                   return (
                     <tr key={c.id} className="transition hover:bg-slate-800/50">
                       <td className="px-5 py-4 text-xs font-mono text-slate-400">{c.id?.slice(0, 8)}…</td>

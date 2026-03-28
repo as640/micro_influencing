@@ -47,7 +47,7 @@ function HomePage() {
           if (c.status === 'active') active++;
           if (c.status === 'completed') {
             completed++;
-            totalMoney += Number(c.payment_amount || 0);
+            totalMoney += Number(c.agreed_price || 0);
           }
         });
 

@@ -33,8 +33,13 @@ const getNavItems = (role, isSuperUser) => {
 function DashboardLayout() {
   const { user, logout, loading } = useAuth();
 
-  // If still loading auth state, show nothing (avoid flash)
-  if (loading) return null;
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-slate-950">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
+      </div>
+    );
+  }
 
   // If not logged in, redirect to login
   if (!user) return <Navigate to="/login" replace />;

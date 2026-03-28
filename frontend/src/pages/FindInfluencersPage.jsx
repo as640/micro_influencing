@@ -155,7 +155,7 @@ function FindInfluencersPage() {
                                     <div className="flex items-center gap-4">
                                         <div className="h-14 w-14 rounded-full bg-gradient-to-tr from-fuchsia-500 to-amber-500 p-[2.5px] shadow-lg">
                                             <div className="h-full w-full rounded-full border-[3px] border-slate-900 bg-slate-800 overflow-hidden flex items-center justify-center">
-                                                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${inf.instagram_handle}`} alt="Avatar" className="w-full h-full object-cover" />
+                                                <img src={inf.profile_picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${inf.instagram_handle}`} alt="Avatar" className="w-full h-full object-cover" />
                                             </div>
                                         </div>
                                         <div>
@@ -197,15 +197,15 @@ function FindInfluencersPage() {
                                         <div className="grid grid-cols-3 gap-3 text-center">
                                             <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-2.5">
                                                 <p className="text-[10px] font-bold text-slate-500 uppercase">Avg Reach</p>
-                                                <p className="font-extrabold text-slate-200 mt-0.5">{formatNumber(inf.average_reach) || '--'}</p>
+                                                <p className="font-extrabold text-slate-200 mt-0.5">{formatNumber(inf.avg_reach) || '--'}</p>
                                             </div>
                                             <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-2.5">
                                                 <p className="text-[10px] font-bold text-slate-500 uppercase">Avg Likes</p>
-                                                <p className="font-extrabold text-slate-200 mt-0.5">{formatNumber(inf.average_likes_post) || '--'}</p>
+                                                <p className="font-extrabold text-slate-200 mt-0.5">{formatNumber(inf.avg_likes_per_post) || '--'}</p>
                                             </div>
                                             <div className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-2.5">
                                                 <p className="text-[10px] font-bold text-slate-500 uppercase">Reel Hits</p>
-                                                <p className="font-extrabold text-slate-200 mt-0.5">{formatNumber(inf.average_likes_reel) || '--'}</p>
+                                                <p className="font-extrabold text-slate-200 mt-0.5">{formatNumber(inf.avg_likes_per_reel) || '--'}</p>
                                             </div>
                                         </div>
                                         {inf.audience_demographics && (

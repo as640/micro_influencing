@@ -203,19 +203,14 @@ function FindCampaignsPage() {
                                     return (
                                         <button
                                             onClick={() => handleApply(camp.business_info?.id, camp.id)}
-                                            disabled={!isDomainMatch || applyingTo === camp.id}
+                                            disabled={applyingTo === camp.id}
                                             className={`w-full rounded-xl py-3.5 text-xs font-bold uppercase tracking-wider transition-all shadow-lg glow-hover ${
-                                                !isDomainMatch 
-                                                ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed shadow-none' 
-                                                : applyingTo === camp.id
+                                                applyingTo === camp.id
                                                     ? 'bg-indigo-500/50 text-white cursor-wait'
                                                     : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-indigo-600/20'
                                             }`}
-                                            title={!isDomainMatch ? `You are in ${user?.influencer_profile?.category}, but this campaign needs ${camp.business_info?.industry}` : ''}
                                         >
-                                            {!isDomainMatch 
-                                                ? `Domain Mismatch (${camp.business_info?.industry})` 
-                                                : applyingTo === camp.id 
+                                            {applyingTo === camp.id 
                                                     ? (
                                                         <span className="flex items-center justify-center gap-2">
                                                             <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">

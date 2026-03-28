@@ -9,6 +9,8 @@ function StatusBadge({ status }) {
     pending: 'bg-amber-900/40 text-amber-300',
     active: 'bg-blue-900/40 text-blue-300',
     work_submitted: 'bg-indigo-900/40 text-indigo-300',
+    work_verified: 'bg-teal-900/40 text-teal-300',
+    payment_done: 'bg-green-900/40 text-green-300',
     completed: 'bg-emerald-900/40 text-emerald-300',
     cancelled: 'bg-red-900/40 text-red-300',
     paid: 'bg-purple-900/40 text-purple-300',
