@@ -40,7 +40,7 @@ function DashboardLayout() {
   if (!user) return <Navigate to="/login" replace />;
 
   const displayName = user.influencer_profile?.instagram_handle
-    || user.business_profile?.company_name
+    || user.business_profiles?.[0]?.company_name
     || user.email;
 
   const roleDisplay = user.role.charAt(0).toUpperCase() + user.role.slice(1);
@@ -56,12 +56,9 @@ function DashboardLayout() {
       <aside className="hidden md:flex w-72 flex-col border-r border-slate-800/60 bg-slate-900/60 backdrop-blur-2xl z-20">
         
         {/* Brand Area */}
-        <div className="flex items-center gap-3 px-6 py-8">
-          <BrandLogo className="h-10 w-auto animate-float" />
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-white/90 font-display">MicroFluence</h1>
-            <p className="text-xs font-semibold uppercase tracking-wider text-indigo-400">{roleDisplay}</p>
-          </div>
+        <div className="flex items-center gap-3 px-6 py-6">
+          <BrandLogo className="h-9 w-auto animate-float" />
+          <span className="text-lg font-bold tracking-tight text-white/90 font-display">MicroFluence</span>
         </div>
 
         {/* Navigation Map */}
@@ -88,7 +85,7 @@ function DashboardLayout() {
         <div className="p-4 border-t border-slate-800/60 bg-slate-900/40">
           <div className="flex items-center gap-3 p-2 rounded-xl border border-slate-800 bg-slate-950/50 shadow-inner">
             <div className="h-10 w-10 shrink-0 rounded-full border border-slate-700 bg-slate-800 overflow-hidden">
-              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} alt="Avatar" className="h-full w-full object-cover" />
+              <img src={user.profile_picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} alt="Avatar" className="h-full w-full object-cover bg-slate-900" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="truncate text-sm font-bold text-slate-200">{displayName}</p>
@@ -111,15 +108,12 @@ function DashboardLayout() {
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">
         
         {/* Top Header Bar */}
-        <header className="sticky top-0 z-20 border-b border-slate-800/60 bg-slate-950/70 backdrop-blur-xl px-6 lg:px-10 py-4 flex items-center justify-between shadow-sm">
+        <header className="sticky top-0 z-20 border-b border-slate-800/60 bg-slate-950/70 backdrop-blur-xl px-6 lg:px-10 py-3 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-4">
-            {/* Mobile menu icon placeholder if needed */}
+            {/* Mobile logo */}
             <div className="md:hidden">
               <BrandLogo className="h-8 w-auto" />
             </div>
-            <h2 className="text-lg font-semibold text-slate-200 hidden md:block capitalize font-display">
-              {user.role} Dashboard
-            </h2>
           </div>
           
           <div className="flex items-center gap-4">

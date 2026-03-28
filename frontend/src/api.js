@@ -82,6 +82,19 @@ export const authApi = {
     logout: (refresh) => request('POST', '/auth/logout/', { refresh }),
     me: () => request('GET', '/auth/me/'),
     updateProfile: (data) => request('PATCH', '/auth/me/', data),
+    uploadProfilePicture: async (file) => {
+        const token = localStorage.getItem('access_token');
+        const formData = new FormData();
+        formData.append('profile_picture', file);
+        
+        const res = await fetch(`${BASE}/auth/me/`, {
+            method: 'PATCH',
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+            body: formData,
+        });
+        if (!res.ok) throw await res.json().catch(() => ({ detail: 'Upload failed' }));
+        return res.json();
+    },
 };
 
 // ─── Discovery ───────────────────────────────────────────────────────────────

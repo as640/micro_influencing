@@ -178,14 +178,21 @@ class MeView(APIView):
 
     def patch(self, request):
         user = request.user
+
+        # Handle User-level fields (e.g., profile_picture upload)
+        if 'profile_picture' in request.FILES:
+            user.profile_picture = request.FILES['profile_picture']
+            user.save(update_fields=['profile_picture'])
+
         if user.role == 'influencer':
             serializer = InfluencerProfileSerializer(
                 user.influencer_profile, data=request.data, partial=True
             )
         else:
-            serializer = BusinessProfileSerializer(
-                user.business_profile, data=request.data, partial=True
-            )
+            profile = user.business_profiles.first()
+            if not profile:
+                return Response({'error': 'No business profile found.'}, status=status.HTTP_400_BAD_REQUEST)
+            serializer = BusinessProfileSerializer(profile, data=request.data, partial=True)
             
         if serializer.is_valid():
             serializer.save()

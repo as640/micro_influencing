@@ -36,10 +36,26 @@ function AccountInfoPage() {
   });
   const [savingPayout, setSavingPayout] = useState(false);
   const [payoutSaved, setPayoutSaved] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   if (!user) {
     return <div className="flex h-48 items-center justify-center text-slate-400">Loading…</div>;
   }
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const updatedUser = await authApi.uploadProfilePicture(file);
+      replaceUser(updatedUser);
+    } catch (err) {
+      console.error('Upload failed', err);
+      alert('Failed to upload profile picture.');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
 
@@ -135,6 +151,22 @@ function AccountInfoPage() {
       </div>
 
       <form onSubmit={handleSave} className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 mb-8 border-b border-slate-800 pb-8">
+          <img 
+            src={user.profile_picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} 
+            alt="Profile Avatar" 
+            className="w-24 h-24 rounded-full border-4 border-slate-800 object-cover bg-slate-950"
+          />
+          <div className="text-center sm:text-left">
+            <h3 className="text-lg font-medium text-white mb-2">Profile Picture</h3>
+            <label className="cursor-pointer inline-block rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 sm:py-1.5 text-sm font-semibold text-white transition hover:bg-slate-700">
+              {uploading ? 'Uploading...' : 'Upload New Picture'}
+              <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} disabled={uploading} />
+            </label>
+            <p className="mt-2 text-xs text-slate-500">JPG, PNG or GIF. Fits best as a square.</p>
+          </div>
+        </div>
+
         <div className="grid gap-6 sm:grid-cols-2">
 
           {/* Read-only fields that apply to everyone */}

@@ -187,7 +187,7 @@ class UserMeSerializer(serializers.ModelSerializer):
     class Meta:
         model  = CustomUser
         fields = ['id', 'email', 'role', 'created_at', 'is_superuser',
-                  'influencer_profile', 'business_profiles']
+                  'profile_picture', 'influencer_profile', 'business_profiles']
 
 
 # ---------------------------------------------------------------------------
@@ -200,11 +200,12 @@ class InfluencerListSerializer(serializers.ModelSerializer):
     Includes only the fields a business needs to scan quickly.
     """
     email = serializers.EmailField(source='user.email', read_only=True)
+    profile_picture = serializers.ImageField(source='user.profile_picture', read_only=True)
 
     class Meta:
         model  = InfluencerProfile
         fields = [
-            'id', 'email', 'instagram_handle', 'category', 'locality',
+            'id', 'email', 'profile_picture', 'instagram_handle', 'category', 'locality',
             'is_verified', 'followers_count', 'avg_reach',
             'avg_likes_per_reel', 'price_min', 'price_max',
         ]
@@ -215,11 +216,12 @@ class InfluencerDetailSerializer(serializers.ModelSerializer):
     Full influencer profile — all metrics, shown on public profile page.
     """
     email = serializers.EmailField(source='user.email', read_only=True)
+    profile_picture = serializers.ImageField(source='user.profile_picture', read_only=True)
 
     class Meta:
         model  = InfluencerProfile
         fields = [
-            'id', 'email',
+            'id', 'email', 'profile_picture',
             'instagram_handle', 'category', 'locality', 'bio',
             'is_verified',
             # Stats
@@ -240,9 +242,11 @@ class InfluencerDetailSerializer(serializers.ModelSerializer):
 
 class BusinessProfilePublicSerializer(serializers.ModelSerializer):
     """Minimal business info shown inside a campaign card."""
+    profile_picture = serializers.ImageField(source='user.profile_picture', read_only=True)
+
     class Meta:
         model  = BusinessProfile
-        fields = ['id', 'company_name', 'industry', 'locality']
+        fields = ['id', 'profile_picture', 'company_name', 'industry', 'locality']
 
 
 class CampaignSerializer(serializers.ModelSerializer):
@@ -306,6 +310,8 @@ class ConversationSerializer(serializers.ModelSerializer):
     # Surfaced info for each party
     business_name      = serializers.CharField(source='business.company_name',        read_only=True)
     influencer_handle  = serializers.CharField(source='influencer.instagram_handle',  read_only=True)
+    business_picture   = serializers.ImageField(source='business.user.profile_picture', read_only=True)
+    influencer_picture = serializers.ImageField(source='influencer.user.profile_picture', read_only=True)
     # Expose IDs as readable fields (FK fields themselves are write-only)
     influencer_id      = serializers.UUIDField(source='influencer.id', read_only=True)
     business_id        = serializers.UUIDField(source='business.id',   read_only=True)
@@ -316,8 +322,8 @@ class ConversationSerializer(serializers.ModelSerializer):
         model  = Conversation
         fields = [
             'id', 'created_at',
-            'business', 'business_name', 'business_id',
-            'influencer', 'influencer_handle', 'influencer_id',
+            'business', 'business_name', 'business_id', 'business_picture',
+            'influencer', 'influencer_handle', 'influencer_id', 'influencer_picture',
             'unread_count', 'last_message',
         ]
         extra_kwargs = {
@@ -372,6 +378,8 @@ class ContractSerializer(serializers.ModelSerializer):
     # Nested read-only display fields
     business_name      = serializers.CharField(source='business.company_name',        read_only=True)
     influencer_handle  = serializers.CharField(source='influencer.instagram_handle',  read_only=True)
+    business_picture   = serializers.ImageField(source='business.user.profile_picture', read_only=True)
+    influencer_picture = serializers.ImageField(source='influencer.user.profile_picture', read_only=True)
     campaign_title     = serializers.CharField(source='campaign.title', default=None, read_only=True)
     has_open_dispute   = serializers.SerializerMethodField()
 
@@ -384,7 +392,7 @@ class ContractSerializer(serializers.ModelSerializer):
             # write-only FKs
             'business', 'influencer', 'campaign',
             # read-only display
-            'business_name', 'influencer_handle', 'campaign_title',
+            'business_name', 'influencer_handle', 'business_picture', 'influencer_picture', 'campaign_title',
         ]
         extra_kwargs = {
             'business':          {'write_only': True, 'required': False},

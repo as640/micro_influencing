@@ -90,6 +90,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     password   = models.CharField(max_length=255, db_column='password_hash')
     role       = models.CharField(max_length=20, choices=UserRole.choices)
     created_at = models.DateTimeField(auto_now_add=True)
+    profile_picture = models.ImageField(upload_to='profile_pics/', blank=True, null=True)
 
     # Django admin / auth internals (not in your schema but needed for admin panel)
     is_active    = models.BooleanField(default=True)
@@ -102,11 +103,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     @property
     def has_open_disputes(self):
+        # Phase 8 Fix: Trust Penalty system (Only global lock if >= 3 disputes)
         from .models import Dispute
         if self.role == UserRole.BUSINESS:
-            return Dispute.objects.filter(contract__business__user=self, status='open').exists()
+            return Dispute.objects.filter(contract__business__user=self, status='open').count() >= 3
         elif self.role == UserRole.INFLUENCER:
-            return Dispute.objects.filter(contract__influencer__user=self, status='open').exists()
+            return Dispute.objects.filter(contract__influencer__user=self, status='open').count() >= 3
         return False
 
     class Meta:

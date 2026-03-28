@@ -29,7 +29,7 @@ function LoginPage() {
     <div className="flex min-h-screen w-full bg-slate-950 animate-fade-in font-sans">
       
       {/* Left Panel: Branding & Marketing */}
-      <div className="hidden lg:flex lg:w-1/2 relative bg-mesh overflow-hidden p-12 flex-col justify-between items-start border-r border-slate-800/50 shadow-2xl z-10">
+      <div className="hidden lg:flex lg:w-1/2 relative bg-mesh overflow-hidden p-12 flex-col justify-between items-start border-r border-slate-800/50 shadow-2xl" style={{clipPath: 'inset(0)', zIndex: 0}}>
         
         {/* Glow Effects */}
         <div className="absolute -top-[10%] -left-[10%] w-[50%] h-[50%] bg-indigo-600/30 blur-[120px] rounded-full pointer-events-none"></div>
