@@ -62,8 +62,7 @@ function DashboardLayout() {
         
         {/* Brand Area */}
         <div className="flex items-center gap-3 px-6 py-6">
-          <BrandLogo className="h-9 w-auto animate-float" />
-          <span className="text-lg font-bold tracking-tight text-white/90 font-display">MicroFluence</span>
+          <BrandLogo className="h-12 w-auto animate-float" />
         </div>
 
         {/* Navigation Map */}

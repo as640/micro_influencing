@@ -35,9 +35,8 @@ function LoginPage() {
         <div className="absolute -top-[10%] -left-[10%] w-[50%] h-[50%] bg-indigo-600/30 blur-[120px] rounded-full pointer-events-none"></div>
         <div className="absolute bottom-[0%] right-[0%] w-[50%] h-[40%] bg-violet-600/20 blur-[100px] rounded-full pointer-events-none"></div>
 
-        <Link to="/" className="z-10 group flex items-center gap-3 transition">
-          <BrandLogo className="h-10 w-auto group-hover:scale-105 transition-transform duration-500 ease-out" />
-          <span className="text-xl font-bold tracking-tight text-white/90">MicroFluence</span>
+        <Link to="/" className="z-10 group flex items-center transition">
+          <BrandLogo className="h-14 lg:h-20 w-auto group-hover:scale-105 transition-transform duration-500 ease-out" />
         </Link>
         
         <div className="z-10 max-w-lg mb-12 animate-fade-up">

@@ -63,8 +63,16 @@ function AccountInfoPage() {
     e.preventDefault();
     setSaving(true);
     try {
+      // Clean up empty strings for numeric fields which crash Django validators
+      const payload = { ...form };
+      ['followers_count', 'price_min', 'price_max'].forEach(field => {
+        if (payload[field] === '') {
+          payload[field] = null;
+        }
+      });
+
       // Send the PATCH request to update the profile
-      const updatedUser = await authApi.updateProfile(form);
+      const updatedUser = await authApi.updateProfile(payload);
       // Update global context with the fresh full user object
       replaceUser(updatedUser);
       setIsEditing(false);

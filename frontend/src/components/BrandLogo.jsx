@@ -1,9 +1,9 @@
-function BrandLogo({ className = '' }) {
+function BrandLogo({ className = 'h-10 w-auto' }) {
   return (
     <img
       src="/logo.jpg"
       alt="MicroFluence logo"
-      className={`h-auto w-full rounded-xl border border-white/10 bg-black/20 object-cover shadow-lg shadow-slate-950/40 ${className}`}
+      className={`rounded-xl object-contain shadow-lg shadow-slate-950/40 ${className}`}
     />
   );
 }
