@@ -47,7 +47,7 @@ from django.db.models import Sum
 from .permissions import IsBusiness, IsConversationParticipant, IsSuperUser
 from .serializers import (
     RegisterSerializer, LoginSerializer, UserMeSerializer,
-    InfluencerListSerializer, InfluencerDetailSerializer,
+    InfluencerListSerializer, InfluencerDetailSerializer, InfluencerProfileSerializer,
     BusinessProfileSerializer,
     CampaignSerializer,
     ConversationSerializer, ConversationDetailSerializer, MessageSerializer,
