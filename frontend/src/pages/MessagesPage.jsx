@@ -248,6 +248,14 @@ function MessagesPage() {
                 </div>
               </header>
 
+              {/* Informational Banner */}
+              <div className="bg-indigo-900/20 border-b border-indigo-500/20 px-6 py-2.5 flex items-center justify-center">
+                <p className="text-xs text-indigo-300/80 text-center font-medium">
+                  <span className="mr-2">💡</span>
+                  Conversations are automatically created when a business approves a campaign interest.
+                </p>
+              </div>
+
               {/* Messages */}
               <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4 custom-scrollbar">
                 {thread === null ? (

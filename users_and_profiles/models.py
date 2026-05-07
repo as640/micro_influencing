@@ -168,6 +168,12 @@ class InfluencerProfile(models.Model):
     price_min            = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     price_max            = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
 
+    # Onboarding & Profile Completion
+    terms_accepted       = models.BooleanField(default=False,
+                             help_text='Set to True once influencer agrees to T&C')
+    custom_category      = models.CharField(max_length=200, blank=True, default='',
+                             help_text='Raw user-typed category before word-match normalisation')
+
     # Instagram OAuth token (stored after verification; never exposed in public API)
     instagram_access_token      = models.TextField(blank=True, null=True)
     instagram_token_expires_at  = models.DateTimeField(blank=True, null=True)
@@ -358,6 +364,14 @@ class Contract(models.Model):
                         )
     agreed_price      = models.DecimalField(max_digits=10, decimal_places=2)
     deliverables      = models.TextField()
+
+    # Escrow
+    escrow_opted      = models.BooleanField(default=False,
+                            help_text='True if influencer chose escrow protection on this contract')
+    deadline_at       = models.DateTimeField(blank=True, null=True,
+                            help_text='24h deadline for business to confirm escrow; None if no escrow')
+    completion_deadline = models.DateTimeField(blank=True, null=True,
+                            help_text='Agreed deadline to complete the work')
     payment_intent_id = models.CharField(max_length=255, blank=True, null=True)
 
     created_at        = models.DateTimeField(auto_now_add=True)
@@ -424,6 +438,54 @@ class Dispute(models.Model):
 
     def __str__(self):
         return f'Dispute on Contract#{self.contract_id} [{self.status}]'
+
+# ---------------------------------------------------------------------------
+# 8b. Campaign Interest  →  maps to: "campaign_interests"
+# ---------------------------------------------------------------------------
+
+class CampaignInterestStatus(models.TextChoices):
+    PENDING  = 'pending',  'Pending'
+    APPROVED = 'approved', 'Approved'
+    DECLINED = 'declined', 'Declined'
+
+
+class CampaignInterest(models.Model):
+    """
+    Tracks an influencer expressing interest in a campaign.
+    Business can approve or decline. Only on approval does a
+    Conversation get created.
+    """
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    campaign   = models.ForeignKey(
+                     Campaign,
+                     on_delete=models.CASCADE,
+                     related_name='interests',
+                     db_column='campaign_id',
+                 )
+    influencer = models.ForeignKey(
+                     InfluencerProfile,
+                     on_delete=models.CASCADE,
+                     related_name='campaign_interests',
+                     db_column='influencer_id',
+                 )
+    status     = models.CharField(
+                     max_length=20,
+                     choices=CampaignInterestStatus.choices,
+                     default=CampaignInterestStatus.PENDING,
+                 )
+    note       = models.TextField(blank=True, default='',
+                     help_text='Optional pitch note from the influencer')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table      = 'campaign_interests'
+        unique_together = [('campaign', 'influencer')]   # one interest per campaign-influencer pair
+        ordering      = ['-created_at']
+
+    def __str__(self):
+        return f'@{self.influencer.instagram_handle} → {self.campaign.title} [{self.status}]'
+
 
 # ---------------------------------------------------------------------------
 # 8. Password Reset OTP

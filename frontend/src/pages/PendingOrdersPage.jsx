@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { contractApi, paymentApi, disputeApi } from '../api';
 import { useAuth } from '../context/AuthContext';
+import EscrowExplainerModal from '../components/EscrowExplainerModal';
 
 const RAZORPAY_KEY_ID = import.meta.env.VITE_RAZORPAY_KEY_ID || '';
 
@@ -28,8 +29,10 @@ function PendingOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(null);
   const [paying, setPaying] = useState(null);
-  const [paymentResult, setPaymentResult] = useState(null); // { success, message }
+  const [paymentResult, setPaymentResult] = useState(null);
   const [disputeModal, setDisputeModal] = useState({ isOpen: false, contractId: null, reason: '' });
+  const [escrowModal, setEscrowModal] = useState({ isOpen: false, contract: null });
+  const [showEscrowInfo, setShowEscrowInfo] = useState(false);
 
   useEffect(() => {
     contractApi.list()
@@ -42,9 +45,18 @@ function PendingOrdersPage() {
     setUpdating(id);
     try {
       await contractApi.updateStatus(id, 'active');
-      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'active' } : c));
+      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'active', escrow_opted: false } : c));
     } catch (err) { console.error(err); }
-    finally { setUpdating(null); }
+    finally { setUpdating(null); setEscrowModal({ isOpen: false, contract: null }); }
+  };
+
+  const handleEscrowAccept = async (id) => {
+    setUpdating(id);
+    try {
+      const res = await contractApi.acceptWithEscrow(id);
+      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, ...res.contract } : c));
+    } catch (err) { console.error(err); }
+    finally { setUpdating(null); setEscrowModal({ isOpen: false, contract: null }); }
   };
 
   const handleCancel = async (id) => {
@@ -186,6 +198,20 @@ function PendingOrdersPage() {
   const completedContracts = contracts.filter((c) => c.status === 'completed');
   const isInfluencer = user?.role === 'influencer';
 
+  const getDeadlineCountdown = (deadline) => {
+    if (!deadline) return null;
+    const diff = new Date(deadline) - new Date();
+    if (diff <= 0) return 'Expired';
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    return `${h}h ${m}m remaining`;
+  };
+
+  const getReceiptNumber = (contract) => {
+    const year = new Date(contract.updated_at || contract.created_at).getFullYear();
+    return `MF-${year}-${contract.id?.slice(0, 8).toUpperCase()}`;
+  };
+
   if (loading) {
     return <div className="flex h-48 items-center justify-center text-slate-400">Loading contracts…</div>;
   }
@@ -275,16 +301,29 @@ function PendingOrdersPage() {
                       <td className="px-6 py-5">
                         <StatusBadge status={wasJustPaid ? 'paid' : c.status} />
                         {c.has_open_dispute && (
-                          <span className="ml-2 inline-flex items-center rounded-md bg-red-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-400 border border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]">
+                          <span className="ml-2 inline-flex items-center rounded-md bg-red-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-400 border border-red-500/20">
                             Disputed
                           </span>
+                        )}
+                        {c.escrow_opted && (
+                          <span className="ml-2 inline-flex items-center rounded-md bg-violet-500/10 px-2 py-1 text-[10px] font-bold text-violet-400 border border-violet-500/20">
+                            🛡️ Escrow
+                          </span>
+                        )}
+                        {c.escrow_opted && c.deadline_at && c.status === 'active' && (
+                          <p className="mt-1 text-[10px] text-amber-400 font-semibold">
+                            ⏱ {getDeadlineCountdown(c.deadline_at)}
+                          </p>
+                        )}
+                        {c.status === 'completed' && (
+                          <p className="mt-1 font-mono text-[10px] text-emerald-400/70">{getReceiptNumber(c)}</p>
                         )}
                       </td>
                       <td className="px-6 py-5">
                         {/* Influencer: accept or decline pending contracts */}
                         {c.status === 'pending' && isInfluencer && (
                           <div className="flex gap-2.5">
-                            <button onClick={() => handleAccept(c.id)} disabled={updating === c.id}
+                            <button onClick={() => setEscrowModal({ isOpen: true, contract: c })} disabled={updating === c.id}
                               className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none">
                               Accept
                             </button>
@@ -459,6 +498,42 @@ function PendingOrdersPage() {
           </div>
         </div>
       )}
+
+      {/* Escrow Choice Modal */}
+      {escrowModal.isOpen && escrowModal.contract && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-1">Accept Contract</h3>
+            <p className="text-sm text-slate-400 mb-1">Choose how you'd like to accept this contract:</p>
+            <p className="text-xs font-mono text-indigo-400 mb-5">#{escrowModal.contract.id?.slice(0,8)} · ₹{Number(escrowModal.contract.agreed_price).toLocaleString('en-IN')}</p>
+            <div className="space-y-3 mb-5">
+              <button onClick={() => handleEscrowAccept(escrowModal.contract.id)} disabled={updating === escrowModal.contract.id}
+                className="w-full flex items-start gap-4 rounded-xl border border-emerald-500/30 bg-emerald-900/10 p-4 hover:bg-emerald-900/20 transition-all disabled:opacity-50 text-left">
+                <span className="text-2xl shrink-0">🛡️</span>
+                <div>
+                  <p className="font-bold text-emerald-400 text-sm">Accept with Escrow</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Business must fund escrow in 24h. Your payment is guaranteed before you start work.</p>
+                </div>
+              </button>
+              <button onClick={() => handleAccept(escrowModal.contract.id)} disabled={updating === escrowModal.contract.id}
+                className="w-full flex items-start gap-4 rounded-xl border border-slate-700 bg-slate-800/50 p-4 hover:bg-slate-800 transition-all disabled:opacity-50 text-left">
+                <span className="text-2xl shrink-0">🤝</span>
+                <div>
+                  <p className="font-bold text-slate-200 text-sm">Accept without Escrow</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Trust-based. Business pays on completion. MicroFluence does not guarantee payment.</p>
+                </div>
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <button onClick={() => setShowEscrowInfo(true)} className="text-xs text-indigo-400 underline hover:text-indigo-300">💡 What is Escrow?</button>
+              <button onClick={() => setEscrowModal({ isOpen: false, contract: null })} className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-400 hover:bg-slate-800">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Escrow Explainer */}
+      {showEscrowInfo && <EscrowExplainerModal onClose={() => setShowEscrowInfo(false)} />}
     </section>
   );
 }

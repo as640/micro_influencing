@@ -30,7 +30,17 @@ export function AuthProvider({ children }) {
         saveTokens(data.access, data.refresh);
         const me = await authApi.me();
         setUser(me);
-        navigate('/dashboard/home');
+        // Redirect influencers to onboarding if they haven't accepted T&C yet
+        if (me.role === 'influencer' && !me.influencer_profile?.terms_accepted) {
+            navigate('/influencer-onboarding');
+        } 
+        // Redirect new businesses to onboarding if they have 0 profiles
+        else if (me.role === 'business' && (!me.business_profiles || me.business_profiles.length === 0)) {
+            navigate('/business-onboarding');
+        } 
+        else {
+            navigate('/dashboard/home');
+        }
         return me;
     }, [navigate]);
 

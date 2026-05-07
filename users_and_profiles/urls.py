@@ -17,11 +17,13 @@ from .views import (
     # Discovery
     InfluencerListView, InfluencerDetailView,
     CampaignListCreateView, CampaignDetailView,
+    # Campaign Interest
+    CampaignInterestView, CampaignInterestListView, CampaignInterestRespondView, MyInterestsView,
     # Messaging
     ConversationListCreateView, ConversationDetailView,
     MessageCreateView, MarkMessagesReadView,
     # Contracts
-    ContractListCreateView, ContractDetailView, ContractStatusView,
+    ContractListCreateView, ContractDetailView, ContractStatusView, ContractEscrowAcceptView,
     # Payments (Escrow)
     ContractPaymentCreateView, ContractPaymentVerifyView,
     # Instagram OAuth
@@ -31,7 +33,7 @@ from .views import (
     # GST / Setu
     PublicBusinessGSTRequestOTPView, BusinessGSTRequestOTPView, BusinessGSTVerifyOTPView,
     # Admin helpers
-    BusinessListView,
+    BusinessListCreateView,
     # Disputes
     DisputeListCreateView, DisputeResolveView, SuperadminDisputeListView,
 )
@@ -59,12 +61,22 @@ urlpatterns = [
     path('influencers/',           InfluencerListView.as_view(),   name='influencer-list'),
     path('influencers/<uuid:pk>/', InfluencerDetailView.as_view(), name='influencer-detail'),
 
-    # ── All Businesses (superadmin) ───────────────────────────
-    path('businesses/', BusinessListView.as_view(), name='business-list'),
+    # ── All Businesses (superadmin) / Create Business ─────────────────────────
+    path('businesses/', BusinessListCreateView.as_view(), name='business-list-create'),
 
     # ── Campaigns ────────────────────────────────────────────
     path('campaigns/',           CampaignListCreateView.as_view(), name='campaign-list-create'),
     path('campaigns/<uuid:pk>/', CampaignDetailView.as_view(),    name='campaign-detail'),
+
+    # ── Campaign Interest (Influencer → Business) ─────────────
+    path('campaigns/<uuid:pk>/interest/',
+         CampaignInterestView.as_view(),      name='campaign-interest'),
+    path('campaigns/<uuid:pk>/interests/',
+         CampaignInterestListView.as_view(),  name='campaign-interests-list'),
+    path('campaigns/<uuid:pk>/interests/<uuid:iid>/',
+         CampaignInterestRespondView.as_view(), name='campaign-interest-respond'),
+    path('interests/mine/',
+         MyInterestsView.as_view(),           name='my-interests'),
 
     # ── Conversations (Inbox) ─────────────────────────────────
     path('conversations/',
@@ -87,6 +99,9 @@ urlpatterns = [
     # PATCH /api/contracts/<uuid>/status/  — update status (accept/complete/cancel)
     path('contracts/<uuid:pk>/status/',
          ContractStatusView.as_view(),     name='contract-status'),
+    # POST /api/contracts/<uuid>/escrow-accept/ — accept with escrow
+    path('contracts/<uuid:pk>/escrow-accept/',
+         ContractEscrowAcceptView.as_view(), name='contract-escrow-accept'),
 
     # ── Payments (Escrow) ─────────────────────────────────────
     path('contracts/<uuid:pk>/payment/create/',

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { campaignApi } from '../api';
+import { useNavigate } from 'react-router-dom';
+import { campaignApi, campaignInterestApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 function formatNumber(num) {
@@ -9,10 +10,18 @@ function formatNumber(num) {
 
 function MyCampaignsPage() {
     const { user } = useAuth();
+    const navigate = useNavigate();
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [showForm, setShowForm] = useState(false);
+
+    // State for interests expansion
+    const [expandedCampaignId, setExpandedCampaignId] = useState(null);
+    const [interestsData, setInterestsData] = useState({}); // { [campaignId]: { loading: bool, data: [] } }
+    
+    // Filter
+    const [filter, setFilter] = useState('all'); // 'all', 'active', 'closed'
 
     const [form, setForm] = useState({
         business_id: user?.business_profiles?.[0]?.id || '',
@@ -100,6 +109,50 @@ function MyCampaignsPage() {
         }
     };
 
+    const handleToggleInterests = async (campId) => {
+        if (expandedCampaignId === campId) {
+            setExpandedCampaignId(null);
+            return;
+        }
+        setExpandedCampaignId(campId);
+        
+        // Fetch if not loaded
+        if (!interestsData[campId]) {
+            setInterestsData(prev => ({ ...prev, [campId]: { loading: true, data: [] } }));
+            try {
+                const data = await campaignInterestApi.listForCampaign(campId);
+                setInterestsData(prev => ({ ...prev, [campId]: { loading: false, data } }));
+            } catch (err) {
+                console.error(err);
+                setInterestsData(prev => ({ ...prev, [campId]: { loading: false, data: [] } }));
+            }
+        }
+    };
+
+    const handleRespondInterest = async (campId, interestId, status) => {
+        try {
+            await campaignInterestApi.respond(campId, interestId, status);
+            // Update local state
+            setInterestsData(prev => {
+                const campData = prev[campId];
+                if (!campData) return prev;
+                return {
+                    ...prev,
+                    [campId]: {
+                        ...campData,
+                        data: campData.data.map(i => i.id === interestId ? { ...i, status } : i)
+                    }
+                };
+            });
+            if (status === 'approved') {
+                alert('Interest approved! A new conversation has been started in your Messages tab.');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Failed to update interest status.');
+        }
+    };
+
     if (user?.role !== 'business' && !user?.is_superuser) {
         return (
             <div className="flex h-48 items-center justify-center text-slate-400">
@@ -108,19 +161,38 @@ function MyCampaignsPage() {
         );
     }
 
+    const filteredCampaigns = campaigns.filter(c => {
+        if (filter === 'active') return c.is_active;
+        if (filter === 'closed') return !c.is_active;
+        return true;
+    });
+
     return (
         <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h2 className="text-2xl font-bold text-white">My Campaigns</h2>
                     <p className="mt-1 text-slate-400">Post and manage your collaboration opportunities.</p>
                 </div>
-                <button
-                    onClick={() => setShowForm(!showForm)}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
-                >
-                    {showForm ? 'Cancel' : 'Post New Ad'}
-                </button>
+                <div className="flex items-center gap-4">
+                    {/* Segmented Filter */}
+                    <div className="flex gap-1 bg-slate-800/60 rounded-lg p-1 border border-slate-700/50">
+                        {['all', 'active', 'closed'].map(f => (
+                            <button key={f} onClick={() => setFilter(f)}
+                                className={`px-3 py-1.5 rounded-md text-xs font-bold capitalize transition-all ${
+                                    filter === f ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                                }`}>
+                                {f}
+                            </button>
+                        ))}
+                    </div>
+                    <button
+                        onClick={() => setShowForm(!showForm)}
+                        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-indigo-500 shadow-lg shadow-indigo-600/20"
+                    >
+                        {showForm ? 'Cancel' : 'Post New Ad'}
+                    </button>
+                </div>
             </div>
 
             {showForm && (
@@ -192,16 +264,18 @@ function MyCampaignsPage() {
 
             {loading ? (
                 <div className="text-center text-slate-400 py-12">Loading your campaigns...</div>
-            ) : campaigns.length === 0 && !showForm ? (
+            ) : filteredCampaigns.length === 0 && !showForm ? (
                 <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-12 text-center">
-                    <p className="text-lg font-medium text-slate-300">You haven't posted any campaigns yet.</p>
-                    <button onClick={() => setShowForm(true)} className="mt-4 text-indigo-400 font-medium hover:text-indigo-300 transition-colors">
-                        Post your first ad →
-                    </button>
+                    <p className="text-lg font-medium text-slate-300">No campaigns found.</p>
+                    {filter === 'all' && (
+                        <button onClick={() => setShowForm(true)} className="mt-4 text-indigo-400 font-medium hover:text-indigo-300 transition-colors">
+                            Post your first ad →
+                        </button>
+                    )}
                 </div>
             ) : (
                 <div className="grid gap-6">
-                    {campaigns.map((camp) => (
+                    {filteredCampaigns.map((camp) => (
                         <div key={camp.id} className="rounded-xl border border-slate-800 bg-slate-900 p-6 flex flex-col gap-4">
                             <div className="flex flex-col md:flex-row gap-6 md:items-center justify-between">
                                 <div className="flex-1">
@@ -221,24 +295,96 @@ function MyCampaignsPage() {
                                     <p className="text-xs text-slate-500 mt-2">Posted on {new Date(camp.created_at).toLocaleDateString()}</p>
                                 </div>
                             </div>
-                            <div className="flex items-center justify-end gap-3 border-t border-slate-800/60 pt-4 mt-2">
+                            <div className="flex items-center justify-between border-t border-slate-800/60 pt-4 mt-2">
                                 <button
-                                    onClick={() => handleToggleStatus(camp.id, camp.is_active)}
-                                    className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${
-                                        camp.is_active 
-                                            ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' 
-                                            : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-                                    }`}
+                                    onClick={() => handleToggleInterests(camp.id)}
+                                    className="flex items-center gap-2 rounded-lg bg-indigo-600/10 px-4 py-1.5 text-sm font-semibold text-indigo-400 transition hover:bg-indigo-600/20"
                                 >
-                                    {camp.is_active ? 'Deactivate' : 'Reactivate'}
+                                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${expandedCampaignId === camp.id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                    View Interests
                                 </button>
-                                <button
-                                    onClick={() => handleDelete(camp.id)}
-                                    className="rounded-lg bg-red-500/10 px-4 py-1.5 text-sm font-semibold text-red-500 transition hover:bg-red-500/20"
-                                >
-                                    Delete
-                                </button>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => handleToggleStatus(camp.id, camp.is_active)}
+                                        className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${
+                                            camp.is_active 
+                                                ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' 
+                                                : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                                        }`}
+                                    >
+                                        {camp.is_active ? 'Deactivate' : 'Reactivate'}
+                                    </button>
+                                    <button
+                                        onClick={() => handleDelete(camp.id)}
+                                        className="rounded-lg bg-red-500/10 px-4 py-1.5 text-sm font-semibold text-red-500 transition hover:bg-red-500/20"
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
                             </div>
+
+                            {/* Expandable Interests Section */}
+                            {expandedCampaignId === camp.id && (
+                                <div className="mt-2 rounded-xl bg-slate-950/50 p-5 border border-slate-800/50">
+                                    <h4 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
+                                        🎯 Influencers Interested
+                                    </h4>
+                                    
+                                    {interestsData[camp.id]?.loading ? (
+                                        <div className="text-sm text-slate-500 animate-pulse py-2">Loading interests...</div>
+                                    ) : !interestsData[camp.id]?.data?.length ? (
+                                        <div className="text-sm text-slate-500 py-2">No influencers have expressed interest yet.</div>
+                                    ) : (
+                                        <div className="grid gap-3">
+                                            {interestsData[camp.id].data.map(interest => (
+                                                <div key={interest.id} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between rounded-xl bg-slate-900 border border-slate-700/50 p-4">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="h-12 w-12 rounded-full overflow-hidden bg-slate-800 shrink-0">
+                                                            {interest.influencer_picture ? (
+                                                                <img src={interest.influencer_picture} alt="" className="h-full w-full object-cover" />
+                                                            ) : (
+                                                                <div className="h-full w-full flex items-center justify-center text-xl">👤</div>
+                                                            )}
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="font-bold text-slate-200">@{interest.influencer_handle}</p>
+                                                                <span className="text-[10px] uppercase font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full">{interest.category}</span>
+                                                            </div>
+                                                            <p className="text-xs text-slate-400 mt-1">
+                                                                {formatNumber(interest.followers_count)} followers • {interest.locality} • ₹{interest.price_min} - ₹{interest.price_max}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                                                        {interest.status === 'pending' ? (
+                                                            <>
+                                                                <button onClick={() => handleRespondInterest(camp.id, interest.id, 'approved')}
+                                                                    className="flex-1 sm:flex-none rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-emerald-500 shadow-lg shadow-emerald-500/20">
+                                                                    Approve & Message
+                                                                </button>
+                                                                <button onClick={() => handleRespondInterest(camp.id, interest.id, 'declined')}
+                                                                    className="flex-1 sm:flex-none rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-300 transition hover:bg-slate-700 hover:text-white">
+                                                                    Decline
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            <div className="w-full sm:w-auto text-center px-4 py-2 rounded-lg border border-slate-800 bg-slate-900/50">
+                                                                <span className={`text-xs font-bold uppercase ${interest.status === 'approved' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                                    {interest.status}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>

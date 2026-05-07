@@ -40,7 +40,7 @@ from rest_framework.generics import (
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
-from .models import InfluencerProfile, BusinessProfile, Campaign, Conversation, Message, Contract, Dispute
+from .models import InfluencerProfile, BusinessProfile, Campaign, Conversation, Message, Contract, Dispute, CampaignInterest, CampaignInterestStatus
 
 from django.utils import timezone
 from django.db.models import Sum
@@ -54,6 +54,7 @@ from .serializers import (
     ContractSerializer,
     PasswordResetRequestSerializer, PasswordResetConfirmSerializer,
     DisputeSerializer,
+    CampaignInterestSerializer,
 )
 
 
@@ -239,13 +240,19 @@ class InfluencerDetailView(RetrieveAPIView):
         return InfluencerProfile.objects.select_related('user').filter(user__is_active=True)
 
 
-class BusinessListView(ListAPIView):
-    """GET /api/businesses/ — returns all business profiles (for superadmin dropdown)."""
+class BusinessListCreateView(ListCreateAPIView):
+    """
+    GET /api/businesses/ — returns all business profiles (for superadmin dropdown).
+    POST /api/businesses/ — create a new business profile (for business onboarding).
+    """
     permission_classes = [IsAuthenticated]
     serializer_class   = BusinessProfileSerializer
 
     def get_queryset(self):
         return BusinessProfile.objects.select_related('user').all()
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
 
 # ===========================================================================
@@ -690,6 +697,39 @@ class ContractStatusView(APIView):
         return Response(
             {
                 'message': f'Contract status updated to "{new_status}".',
+                'contract': ContractSerializer(contract).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ContractEscrowAcceptView(APIView):
+    """
+    POST /api/contracts/<uuid>/escrow-accept/
+    Influencer accepts the contract AND opts into escrow.
+    Sets escrow_opted=True and deadline_at=now+24h for business confirmation.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        contract = get_object_or_404(
+            Contract.objects.select_related('business', 'influencer'), pk=pk
+        )
+        user = request.user
+        if user.role != 'influencer' or contract.influencer != user.influencer_profile:
+            return Response({'error': 'Only the influencer party can accept with escrow.'}, status=status.HTTP_403_FORBIDDEN)
+        if contract.status != 'pending':
+            return Response({'error': 'Contract is not in pending state.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from datetime import timedelta
+        contract.status = 'active'
+        contract.escrow_opted = True
+        contract.deadline_at = timezone.now() + timedelta(hours=24)
+        contract.save(update_fields=['status', 'escrow_opted', 'deadline_at', 'updated_at'])
+
+        return Response(
+            {
+                'message': 'Contract accepted with escrow. Business has 24 hours to fund.',
                 'contract': ContractSerializer(contract).data,
             },
             status=status.HTTP_200_OK,
@@ -1166,3 +1206,142 @@ class DisputeResolveView(APIView):
         dispute.save()
         
         return Response(DisputeSerializer(dispute).data)
+
+
+# ===========================================================================
+# Campaign Interest Views
+# ===========================================================================
+
+class CampaignInterestView(APIView):
+    """
+    POST /api/campaigns/<uuid>/interest/
+        Influencer expresses interest in a campaign.
+        Creates a CampaignInterest record (status=pending).
+        Idempotent — returns existing if already expressed.
+
+    GET /api/campaigns/<uuid>/interest/
+        Influencer checks their own interest status for this campaign.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        campaign = get_object_or_404(Campaign, pk=pk)
+        user = request.user
+        if user.role != 'influencer':
+            return Response({'error': 'Only influencers can check campaign interest.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            interest = CampaignInterest.objects.get(campaign=campaign, influencer=user.influencer_profile)
+            return Response(CampaignInterestSerializer(interest).data)
+        except CampaignInterest.DoesNotExist:
+            return Response({'status': None}, status=status.HTTP_200_OK)
+
+    def post(self, request, pk):
+        campaign = get_object_or_404(Campaign, pk=pk)
+        user = request.user
+
+        if user.role != 'influencer':
+            return Response({'error': 'Only influencers can express interest in campaigns.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Profile gate: influencer must have 100% completion
+        profile = user.influencer_profile
+        fields_checked = [
+            bool(profile.instagram_handle),
+            bool(profile.category),
+            bool(profile.locality),
+            bool(profile.bio),
+            profile.price_min is not None and profile.price_max is not None,
+            profile.is_verified,
+        ]
+        pct = round(sum(1 for f in fields_checked if f) / len(fields_checked) * 100)
+        if pct < 100:
+            return Response(
+                {'error': f'Your profile is only {pct}% complete. Complete it fully before expressing interest.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        note = request.data.get('note', '')
+        interest, created = CampaignInterest.objects.get_or_create(
+            campaign=campaign,
+            influencer=profile,
+            defaults={'note': note}
+        )
+        return Response(
+            CampaignInterestSerializer(interest).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        )
+
+
+class CampaignInterestListView(APIView):
+    """
+    GET /api/campaigns/<uuid>/interests/
+        Business sees list of all influencers who expressed interest.
+
+    PATCH /api/campaigns/<uuid>/interests/<iid>/
+        Business approves or declines an interest.
+        On approval → auto-creates/opens the Conversation.
+        Body: { "status": "approved" | "declined" }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        campaign = get_object_or_404(Campaign, pk=pk)
+        user = request.user
+        # Only business owner or superadmin
+        if not (user.is_superuser or (user.role == 'business' and campaign.business.user == user)):
+            return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        qs = CampaignInterest.objects.filter(campaign=campaign).select_related(
+            'influencer', 'influencer__user'
+        )
+        return Response(CampaignInterestSerializer(qs, many=True).data)
+
+
+class CampaignInterestRespondView(APIView):
+    """
+    PATCH /api/campaigns/<uuid>/interests/<iid>/
+    Business approves or declines interest.
+    On approve: auto-creates a Conversation between business and influencer.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk, iid):
+        campaign = get_object_or_404(Campaign, pk=pk)
+        user = request.user
+        interest = get_object_or_404(CampaignInterest, pk=iid, campaign=campaign)
+
+        if not (user.is_superuser or (user.role == 'business' and campaign.business.user == user)):
+            return Response({'error': 'Only the campaign owner can respond to interests.'}, status=status.HTTP_403_FORBIDDEN)
+
+        new_status = request.data.get('status')
+        if new_status not in [CampaignInterestStatus.APPROVED, CampaignInterestStatus.DECLINED]:
+            return Response({'error': 'status must be "approved" or "declined".'}, status=status.HTTP_400_BAD_REQUEST)
+
+        interest.status = new_status
+        interest.save(update_fields=['status', 'updated_at'])
+
+        # On approval, auto-create the conversation
+        if new_status == CampaignInterestStatus.APPROVED:
+            business = campaign.business
+            influencer = interest.influencer
+            Conversation.objects.get_or_create(
+                business=business,
+                influencer=influencer
+            )
+
+        return Response(CampaignInterestSerializer(interest).data)
+
+
+class MyInterestsView(APIView):
+    """
+    GET /api/interests/mine/
+    Influencer sees all their expressed interests and their approval status.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.role != 'influencer':
+            return Response({'error': 'Only influencers can view their interests.'}, status=status.HTTP_403_FORBIDDEN)
+        qs = CampaignInterest.objects.filter(influencer=user.influencer_profile).select_related(
+            'campaign', 'campaign__business'
+        )
+        return Response(CampaignInterestSerializer(qs, many=True).data)

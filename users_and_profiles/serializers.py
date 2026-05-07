@@ -14,7 +14,7 @@ from .models import (
     CustomUser, UserRole,
     InfluencerProfile,
     BusinessProfile,
-    Campaign,
+    Campaign, CampaignInterest, CampaignInterestStatus,
     Conversation,
     Message,
     Contract,
@@ -167,10 +167,67 @@ class LoginSerializer(serializers.Serializer):
 # Current User ("Me")
 # ---------------------------------------------------------------------------
 
+# Word-match helper — Jaccard token similarity
+# -----------------------------------------------
+def _word_match_category(raw: str, standards: list) -> str:
+    """
+    Returns the closest standard category for a user-typed string
+    using Jaccard token similarity. Falls back to 'other' if no
+    match reaches the threshold.
+    """
+    tokens_raw = set(raw.lower().split())
+    best, best_score = 'other', 0.0
+    for cat in standards:
+        tokens_cat = set(cat.lower().replace('_', ' ').split())
+        intersection = tokens_raw & tokens_cat
+        union = tokens_raw | tokens_cat
+        if not union:
+            continue
+        score = len(intersection) / len(union)
+        if score > best_score:
+            best_score = score
+            best = cat
+    return best if best_score >= 0.25 else 'other'
+
+
+STANDARD_CATEGORIES = [
+    'lifestyle', 'fitness', 'food', 'tech', 'fashion',
+    'travel', 'beauty', 'gaming', 'education', 'finance',
+    'health', 'entertainment', 'sports', 'music', 'art',
+    'photography', 'parenting', 'business', 'skincare', 'other',
+]
+
+
 class InfluencerProfileSerializer(serializers.ModelSerializer):
+    profile_completion_pct = serializers.SerializerMethodField()
+
     class Meta:
         model  = InfluencerProfile
         exclude = ['user']
+
+    def get_profile_completion_pct(self, obj):
+        """Returns 0-100. Criteria: handle, category, locality, bio, price_min+price_max, is_verified."""
+        fields_checked = [
+            bool(obj.instagram_handle),
+            bool(obj.category),
+            bool(obj.locality),
+            bool(obj.bio),
+            obj.price_min is not None and obj.price_max is not None,
+            obj.is_verified,
+        ]
+        filled = sum(1 for f in fields_checked if f)
+        return round(filled / len(fields_checked) * 100)
+
+    def validate_custom_category(self, value):
+        """If user typed a custom category, word-match it and store the normalised version in category."""
+        return value  # raw stored; normalisation happens in update()
+
+    def update(self, instance, validated_data):
+        custom_cat = validated_data.get('custom_category', '')
+        if custom_cat and not validated_data.get('category'):
+            # Auto-classify via word-match
+            validated_data['category'] = _word_match_category(custom_cat, STANDARD_CATEGORIES)
+        return super().update(instance, validated_data)
 
 
 class BusinessProfileSerializer(serializers.ModelSerializer):
@@ -201,6 +258,7 @@ class InfluencerListSerializer(serializers.ModelSerializer):
     """
     email = serializers.EmailField(source='user.email', read_only=True)
     profile_picture = serializers.ImageField(source='user.profile_picture', read_only=True)
+    profile_completion_pct = serializers.SerializerMethodField()
 
     class Meta:
         model  = InfluencerProfile
@@ -208,7 +266,20 @@ class InfluencerListSerializer(serializers.ModelSerializer):
             'id', 'email', 'profile_picture', 'instagram_handle', 'category', 'locality',
             'is_verified', 'followers_count', 'avg_reach',
             'avg_likes_per_reel', 'price_min', 'price_max',
+            'profile_completion_pct',
         ]
+
+    def get_profile_completion_pct(self, obj):
+        fields_checked = [
+            bool(obj.instagram_handle),
+            bool(obj.category),
+            bool(obj.locality),
+            bool(obj.bio),
+            obj.price_min is not None and obj.price_max is not None,
+            obj.is_verified,
+        ]
+        filled = sum(1 for f in fields_checked if f)
+        return round(filled / len(fields_checked) * 100)
 
 
 class InfluencerDetailSerializer(serializers.ModelSerializer):
@@ -259,6 +330,7 @@ class CampaignSerializer(serializers.ModelSerializer):
     business_info = BusinessProfilePublicSerializer(
         source='business', read_only=True
     )
+    interests_count = serializers.SerializerMethodField()
 
     class Meta:
         model  = Campaign
@@ -267,7 +339,7 @@ class CampaignSerializer(serializers.ModelSerializer):
             'budget_min', 'budget_max', 'description',
             'is_active', 'created_at', 'updated_at',
             # nested
-            'business', 'business_info',
+            'business', 'business_info', 'interests_count'
         ]
         extra_kwargs = {
             # 'business' is write-only (we set it from the view via request.user)
@@ -275,6 +347,9 @@ class CampaignSerializer(serializers.ModelSerializer):
             'is_active':   {'required': False},
             'description': {'required': False},
         }
+
+    def get_interests_count(self, obj):
+        return obj.interests.count()
 
 
 # ---------------------------------------------------------------------------
@@ -388,6 +463,7 @@ class ContractSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'status', 'has_open_dispute',
             'agreed_price', 'deliverables', 'payment_intent_id',
+            'escrow_opted', 'deadline_at', 'completion_deadline',
             'created_at', 'updated_at',
             # write-only FKs
             'business', 'influencer', 'campaign',
@@ -400,6 +476,9 @@ class ContractSerializer(serializers.ModelSerializer):
             'campaign':          {'write_only': True, 'required': False},
             'payment_intent_id': {'required': False},
             'status':            {'required': False},
+            'escrow_opted':      {'required': False},
+            'deadline_at':       {'required': False, 'read_only': True},
+            'completion_deadline': {'required': False},
         }
 
     def get_has_open_dispute(self, obj):
@@ -449,5 +528,40 @@ class DisputeSerializer(serializers.ModelSerializer):
             'resolved_by': {'read_only': True},
             'status':     {'read_only': True},
             'resolved_at': {'read_only': True},
+        }
+
+
+# ---------------------------------------------------------------------------
+# Campaign Interest
+# ---------------------------------------------------------------------------
+
+class CampaignInterestSerializer(serializers.ModelSerializer):
+    influencer_handle  = serializers.CharField(source='influencer.instagram_handle', read_only=True)
+    influencer_picture = serializers.ImageField(source='influencer.user.profile_picture', read_only=True)
+    influencer_id      = serializers.UUIDField(source='influencer.id', read_only=True)
+    followers_count    = serializers.IntegerField(source='influencer.followers_count', read_only=True)
+    category           = serializers.CharField(source='influencer.category', read_only=True)
+    locality           = serializers.CharField(source='influencer.locality', read_only=True)
+    price_min          = serializers.DecimalField(source='influencer.price_min', max_digits=10, decimal_places=2, read_only=True)
+    price_max          = serializers.DecimalField(source='influencer.price_max', max_digits=10, decimal_places=2, read_only=True)
+    campaign_title     = serializers.CharField(source='campaign.title', read_only=True)
+    campaign_id        = serializers.UUIDField(source='campaign.id', read_only=True)
+    business_id        = serializers.UUIDField(source='campaign.business.id', read_only=True)
+
+    class Meta:
+        model  = CampaignInterest
+        fields = [
+            'id', 'status', 'note', 'created_at', 'updated_at',
+            # campaign
+            'campaign', 'campaign_id', 'campaign_title', 'business_id',
+            # influencer
+            'influencer', 'influencer_id', 'influencer_handle',
+            'influencer_picture', 'followers_count', 'category', 'locality',
+            'price_min', 'price_max',
+        ]
+        extra_kwargs = {
+            'campaign':   {'write_only': True, 'required': False},
+            'influencer': {'write_only': True, 'required': False},
+            'status':     {'required': False},
         }
 

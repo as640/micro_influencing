@@ -20,6 +20,8 @@ import SuperadminDashboardPage from './pages/SuperadminDashboardPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import MyBusinessesPage from './pages/MyBusinessesPage';
+import InfluencerOnboardingPage from './pages/InfluencerOnboardingPage';
+import BusinessOnboardingPage from './pages/BusinessOnboardingPage';
 
 function RootPage() {
   const location = useLocation();
@@ -38,6 +40,8 @@ function App() {
       <Route path="/" element={<RootPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
+      <Route path="/influencer-onboarding" element={<InfluencerOnboardingPage />} />
+      <Route path="/business-onboarding" element={<BusinessOnboardingPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
 

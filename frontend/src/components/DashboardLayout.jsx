@@ -1,8 +1,21 @@
 import { NavLink, Outlet, Navigate } from 'react-router-dom';
 import BrandLogo from './BrandLogo';
+import ProfileCompletionRing from './ProfileCompletionRing';
 import { useAuth } from '../context/AuthContext';
 
-// Base items for both roles
+function calcPct(profile) {
+  if (!profile) return 0;
+  const checks = [
+    !!profile.instagram_handle,
+    !!profile.category,
+    !!profile.locality,
+    !!profile.bio,
+    profile.price_min != null && profile.price_max != null,
+    !!profile.is_verified,
+  ];
+  return Math.round(checks.filter(Boolean).length / checks.length * 100);
+}
+
 const getNavItems = (role, isSuperUser) => {
   const items = [
     { to: '/dashboard/home', label: 'Home', icon: '🏠' },
@@ -41,10 +54,14 @@ function DashboardLayout() {
     );
   }
 
-  // If not logged in, redirect to login
   if (!user) return <Navigate to="/login" replace />;
 
-  const displayName = user.influencer_profile?.instagram_handle
+  const isInfluencer = user.role === 'influencer';
+  const profile = user.influencer_profile;
+  const pct = isInfluencer ? calcPct(profile) : null;
+  const isVerified = profile?.is_verified;
+
+  const displayName = profile?.instagram_handle
     || user.business_profiles?.[0]?.company_name
     || user.email;
 
@@ -53,19 +70,29 @@ function DashboardLayout() {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-950 text-slate-100 font-sans animate-fade-in relative">
       
-      {/* Global subtle background glows */}
       <div className="absolute top-0 right-[10%] w-[500px] h-[500px] bg-indigo-600/10 blur-[150px] rounded-full pointer-events-none z-0"></div>
       <div className="absolute bottom-[-10%] left-[20%] w-[600px] h-[500px] bg-violet-600/10 blur-[150px] rounded-full pointer-events-none z-0"></div>
 
-      {/* Sidebar (Desktop) */}
+      {/* Sidebar */}
       <aside className="hidden md:flex w-72 flex-col border-r border-slate-800/60 bg-slate-900/60 backdrop-blur-2xl z-20">
         
-        {/* Brand Area */}
         <div className="flex items-center gap-3 px-6 py-6">
           <BrandLogo className="h-12 w-auto animate-float" />
         </div>
 
-        {/* Navigation Map */}
+        {/* Profile completion banner for influencers */}
+        {isInfluencer && pct < 100 && (
+          <div className="mx-4 mb-4 rounded-xl border border-amber-500/20 bg-amber-900/10 px-3 py-3">
+            <div className="flex items-center gap-3">
+              <ProfileCompletionRing percentage={pct} size={40} strokeWidth={4} />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-amber-300">Profile {pct}% complete</p>
+                <p className="text-[10px] text-amber-400/70 mt-0.5 truncate">Complete to apply to campaigns</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <nav className="flex-1 space-y-1.5 px-4 overflow-y-auto overflow-x-hidden custom-scrollbar pb-6">
           <p className="px-3 mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">Menu</p>
           {getNavItems(user.role, user.is_superuser).map((item) => (
@@ -85,14 +112,23 @@ function DashboardLayout() {
           ))}
         </nav>
 
-        {/* User Profile / Logout Banner */}
+        {/* User card */}
         <div className="p-4 border-t border-slate-800/60 bg-slate-900/40">
           <div className="flex items-center gap-3 p-2 rounded-xl border border-slate-800 bg-slate-950/50 shadow-inner">
-            <div className="h-10 w-10 shrink-0 rounded-full border border-slate-700 bg-slate-800 overflow-hidden">
+            <div className="relative h-10 w-10 shrink-0 rounded-full border border-slate-700 bg-slate-800 overflow-hidden">
               <img src={user.profile_picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`} alt="Avatar" className="h-full w-full object-cover bg-slate-900" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="truncate text-sm font-bold text-slate-200">{displayName}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="truncate text-sm font-bold text-slate-200">
+                  {isInfluencer ? `@${displayName}` : displayName}
+                </p>
+                {isVerified && (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.603 3.799A4.49 4.49 0 0112 2.25c1.357 0 2.573.6 3.397 1.549a4.49 4.49 0 013.498 1.307 4.491 4.491 0 011.307 3.497A4.49 4.49 0 0121.75 12a4.49 4.49 0 01-1.549 3.397 4.491 4.491 0 01-1.307 3.497 4.491 4.491 0 01-3.497 1.307A4.49 4.49 0 0112 21.75a4.49 4.49 0 01-3.397-1.549 4.491 4.491 0 01-3.498-1.306 4.491 4.491 0 01-1.307-3.498A4.49 4.49 0 012.25 12c0-1.357.6-2.573 1.549-3.397a4.49 4.49 0 011.307-3.497 4.49 4.49 0 013.497-1.307zm7.007 6.387a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </div>
               <p className="truncate text-xs text-slate-500">{user.email}</p>
             </div>
             <button
@@ -108,19 +144,23 @@ function DashboardLayout() {
         </div>
       </aside>
 
-      {/* Main Content Pane */}
+      {/* Main content */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">
         
-        {/* Top Header Bar */}
         <header className="sticky top-0 z-20 border-b border-slate-800/60 bg-slate-950/70 backdrop-blur-xl px-6 lg:px-10 py-3 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-4">
-            {/* Mobile logo */}
             <div className="md:hidden">
               <BrandLogo className="h-8 w-auto" />
             </div>
           </div>
           
           <div className="flex items-center gap-4">
+            {isInfluencer && pct < 100 && (
+              <NavLink to="/dashboard/account" className="flex items-center gap-2 rounded-xl bg-amber-900/20 border border-amber-500/20 px-3 py-1.5 hover:bg-amber-900/30 transition-all">
+                <ProfileCompletionRing percentage={pct} size={24} strokeWidth={3} showLabel={false} />
+                <span className="text-xs font-bold text-amber-300">{pct}% complete</span>
+              </NavLink>
+            )}
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition cursor-pointer">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -129,7 +169,6 @@ function DashboardLayout() {
           </div>
         </header>
 
-        {/* Dynamic Page Content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-10 custom-scrollbar">
           <Outlet />
         </main>

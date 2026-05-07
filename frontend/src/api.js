@@ -116,12 +116,23 @@ export const conversationApi = {
     markRead: (id) => request('POST', `/conversations/${id}/read/`),
 };
 
+// ─── Campaign Interest ────────────────────────────────────────────────────────
+export const campaignInterestApi = {
+    express: (campaignId, note = '') => request('POST', `/campaigns/${campaignId}/interest/`, { note }),
+    myStatus: (campaignId) => request('GET', `/campaigns/${campaignId}/interest/`),
+    listForCampaign: (campaignId) => request('GET', `/campaigns/${campaignId}/interests/`),
+    respond: (campaignId, interestId, status) =>
+        request('PATCH', `/campaigns/${campaignId}/interests/${interestId}/`, { status }),
+    mine: () => request('GET', '/interests/mine/'),
+};
+
 // ─── Contracts ────────────────────────────────────────────────────────────────
 export const contractApi = {
     list: () => request('GET', '/contracts/'),
     detail: (id) => request('GET', `/contracts/${id}/`),
     create: (data) => request('POST', '/contracts/', data),
     updateStatus: (id, status) => request('PATCH', `/contracts/${id}/status/`, { status }),
+    acceptWithEscrow: (id) => request('POST', `/contracts/${id}/escrow-accept/`, {}),
 };
 
 // ─── Payments ────────────────────────────────────────────────────────────────
@@ -147,6 +158,7 @@ export const businessApi = {
     gstRequestOTP: (gstin) => request('POST', '/business/gst-request/', { gstin }),
     gstVerifyOTP: (reference_id, otp, gstin, company_name, industry, locality) => 
         request('POST', '/business/gst-verify/', { reference_id, otp, gstin, company_name, industry, locality }),
+    createProfile: (data) => request('POST', '/businesses/', data),
 };
 
 // ─── Disputes ─────────────────────────────────────────────────────────────────
