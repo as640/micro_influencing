@@ -100,7 +100,10 @@ export default function InfluencerOnboardingPage() {
       const updated = await authApi.updateProfile({ terms_accepted: true });
       replaceUser(updated);
       setStep(2);
-    } catch { setError('Failed to save. Please retry.'); }
+    } catch (err) { 
+      console.error(err);
+      setError('Failed to save. ' + (err.detail || JSON.stringify(err))); 
+    }
     finally { setSaving(false); }
   };
 
