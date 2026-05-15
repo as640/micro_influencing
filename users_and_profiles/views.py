@@ -783,10 +783,14 @@ class ContractPaymentCreateView(APIView):
             )
 
         # Generate order (amount in INR)
+        # Razorpay limits receipt_id to 40 chars; use first 8 chars of UUID to stay safe
+        stage = 'escrow' if contract.status == ContractStatus.ACTIVE else 'final'
+        short_id = str(contract.id).replace('-', '')[:16]
+        receipt = f"ctr_{short_id}_{stage}"  # max ~27 chars, well under 40
         try:
             order = payment_service.create_order(
                 amount_inr=float(contract.agreed_price),
-                receipt_id=f"contract_{contract.id}"
+                receipt_id=receipt
             )
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
