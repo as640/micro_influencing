@@ -133,6 +133,7 @@ export const contractApi = {
     create: (data) => request('POST', '/contracts/', data),
     updateStatus: (id, status) => request('PATCH', `/contracts/${id}/status/`, { status }),
     acceptWithEscrow: (id) => request('POST', `/contracts/${id}/escrow-accept/`, {}),
+    escrowAccept: (id) => request('POST', `/contracts/${id}/escrow-accept/`, {}),  // alias
 };
 
 // ─── Payments ────────────────────────────────────────────────────────────────

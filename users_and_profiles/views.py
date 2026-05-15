@@ -639,14 +639,19 @@ class ContractStatusView(APIView):
 
     # Valid transitions: (from_status, to_status) → which role can initiate
     TRANSITIONS = {
+        # Standard (non-escrow) accept
         (ContractStatus.PENDING,        ContractStatus.ACTIVE):          'influencer',
         (ContractStatus.PENDING,        ContractStatus.CANCELLED):       'any',
+        # After escrow funded: influencer submits work
         (ContractStatus.ACTIVE,         ContractStatus.WORK_SUBMITTED):  'influencer',
         (ContractStatus.ACTIVE,         ContractStatus.CANCELLED):       'any',
+        # Business verifies the work
         (ContractStatus.WORK_SUBMITTED, ContractStatus.WORK_VERIFIED):   'business',
         (ContractStatus.WORK_SUBMITTED, ContractStatus.CANCELLED):       'any',
+        # After work verified: business triggers final payment release
         (ContractStatus.WORK_VERIFIED,  ContractStatus.PAYMENT_DONE):    'business',
         (ContractStatus.WORK_VERIFIED,  ContractStatus.CANCELLED):       'any',
+        # Influencer confirms receipt → completed
         (ContractStatus.PAYMENT_DONE,   ContractStatus.COMPLETED):       'influencer',
         (ContractStatus.PAYMENT_DONE,   ContractStatus.CANCELLED):       'any',
     }
@@ -767,9 +772,13 @@ class ContractPaymentCreateView(APIView):
             business__user=user
         )
 
-        if contract.status != ContractStatus.ACTIVE:
+        # Payment is made at the START (escrow deposit) when contract is active
+        # OR at the END (work release) when work is verified
+        PAYABLE_STATUSES = [ContractStatus.ACTIVE, ContractStatus.WORK_VERIFIED]
+        if contract.status not in PAYABLE_STATUSES:
             return Response(
-                {'error': f"Contract must be active to fund. Current status is {contract.status}."},
+                {'error': f'Payment not allowed at this stage. Current status: {contract.status}. '
+                           f'Payment is accepted when status is active (escrow deposit) or work_verified (final release).'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -807,7 +816,7 @@ class ContractPaymentVerifyView(APIView):
         if user.role != 'business':
             return Response({'error': 'Only businesses can verify payment.'}, status=status.HTTP_403_FORBIDDEN)
 
-        contract = get_object_or_404(Contract, pk=pk, business=user.business_profile)
+        contract = get_object_or_404(Contract, pk=pk, business__user=user)
 
         order_id   = request.data.get('razorpay_order_id', '')
         payment_id = request.data.get('razorpay_payment_id', '')
@@ -822,13 +831,27 @@ class ContractPaymentVerifyView(APIView):
         if not is_valid:
              return Response({'error': 'Payment verification failed.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Mark as funded
+        # Store payment ID
         contract.payment_intent_id = payment_id
-        contract.save(update_fields=['payment_intent_id', 'updated_at'])
+
+        # Advance contract state based on what stage payment was made
+        if contract.status == ContractStatus.ACTIVE:
+            # This is the escrow deposit — work can now begin
+            contract.status = ContractStatus.WORK_SUBMITTED  # Reuse: means "funded, work can start"
+            # Actually keep it as ACTIVE so influencer can submit work
+            # We just store the escrow payment ID
+            contract.status = ContractStatus.ACTIVE  # stays active — escrow is now funded
+        elif contract.status == ContractStatus.WORK_VERIFIED:
+            # This is the final payout trigger — platform holds the money and will release manually
+            contract.status = ContractStatus.PAYMENT_DONE
+
+        contract.save(update_fields=['payment_intent_id', 'status', 'updated_at'])
 
         return Response({
-            'message': 'Payment successfully verified. Contract is now funded in escrow.',
-            'payment_id': payment_id
+            'message': 'Payment verified. Escrow is now funded — work can begin!' if contract.status == ContractStatus.ACTIVE
+                       else 'Final payment verified. Platform will release funds to influencer shortly.',
+            'payment_id': payment_id,
+            'new_status': contract.status,
         }, status=status.HTTP_200_OK)
 
 

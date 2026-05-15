@@ -1,38 +1,75 @@
 import { useEffect, useState } from 'react';
-import { contractApi, paymentApi, disputeApi } from '../api';
+import { contractApi, paymentApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import EscrowExplainerModal from '../components/EscrowExplainerModal';
 
 const RAZORPAY_KEY_ID = import.meta.env.VITE_RAZORPAY_KEY_ID || '';
 
+/* ── Helpers ─────────────────────────────────────────────────────── */
+
+const STATUS_META = {
+  pending:        { label: 'Awaiting Influencer',  color: 'text-amber-300',  bg: 'bg-amber-900/40'  },
+  active:         { label: 'Active / In Progress', color: 'text-blue-300',   bg: 'bg-blue-900/40'   },
+  work_submitted: { label: 'Work Submitted',        color: 'text-violet-300', bg: 'bg-violet-900/40' },
+  work_verified:  { label: 'Work Verified',         color: 'text-cyan-300',   bg: 'bg-cyan-900/40'   },
+  payment_done:   { label: 'Payment Sent',          color: 'text-purple-300', bg: 'bg-purple-900/40' },
+  completed:      { label: 'Completed',             color: 'text-emerald-300',bg: 'bg-emerald-900/40'},
+  cancelled:      { label: 'Cancelled',             color: 'text-red-300',    bg: 'bg-red-900/40'    },
+};
+
 function StatusBadge({ status }) {
-  const styles = {
-    pending: 'bg-amber-900/40 text-amber-300',
-    active: 'bg-blue-900/40 text-blue-300',
-    work_submitted: 'bg-indigo-900/40 text-indigo-300',
-    work_verified: 'bg-teal-900/40 text-teal-300',
-    payment_done: 'bg-green-900/40 text-green-300',
-    completed: 'bg-emerald-900/40 text-emerald-300',
-    cancelled: 'bg-red-900/40 text-red-300',
-    paid: 'bg-purple-900/40 text-purple-300',
-  };
+  const m = STATUS_META[status] || { label: status, color: 'text-slate-300', bg: 'bg-slate-800' };
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${styles[status] || 'bg-slate-800 text-slate-300'}`}>
-      {status.replace('_', ' ')}
+    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${m.bg} ${m.color}`}>
+      {m.label}
     </span>
   );
 }
 
+/** Visual pipeline showing which step the contract is on */
+function EscrowProgress({ status, escrow_opted }) {
+  const steps = escrow_opted
+    ? ['Proposed', 'Accepted & Escrow', 'Business Pays', 'Work Done', 'Verified', 'Released', 'Complete']
+    : ['Proposed', 'Accepted', 'Work Done', 'Verified', 'Complete'];
+
+  const escrowIndex = {
+    pending:        0,
+    active:         escrow_opted ? 2 : 1,
+    work_submitted: escrow_opted ? 3 : 2,
+    work_verified:  escrow_opted ? 4 : 3,
+    payment_done:   escrow_opted ? 5 : 4,
+    completed:      escrow_opted ? 6 : 4,
+    cancelled:      -1,
+  };
+  const current = escrowIndex[status] ?? 0;
+
+  if (status === 'cancelled') return null;
+
+  return (
+    <div className="flex items-center gap-1 overflow-x-auto pb-1">
+      {steps.map((s, i) => (
+        <div key={s} className="flex items-center gap-1">
+          <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+            i < current  ? 'bg-indigo-600 text-white' :
+            i === current ? 'bg-indigo-400 text-white ring-2 ring-indigo-300/40' :
+                           'bg-slate-800 text-slate-500'
+          }`}>{i < current ? '✓' : i + 1}</div>
+          <span className={`whitespace-nowrap text-[10px] ${i <= current ? 'text-slate-300' : 'text-slate-600'}`}>{s}</span>
+          {i < steps.length - 1 && <div className={`h-px w-4 flex-shrink-0 ${i < current ? 'bg-indigo-600' : 'bg-slate-700'}`} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Main Page ───────────────────────────────────────────────────── */
+
 function PendingOrdersPage() {
   const { user } = useAuth();
   const [contracts, setContracts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(null);
-  const [paying, setPaying] = useState(null);
-  const [paymentResult, setPaymentResult] = useState(null);
-  const [disputeModal, setDisputeModal] = useState({ isOpen: false, contractId: null, reason: '' });
-  const [escrowModal, setEscrowModal] = useState({ isOpen: false, contract: null });
-  const [showEscrowInfo, setShowEscrowInfo] = useState(false);
+  const [loading, setLoading]     = useState(true);
+  const [updating, setUpdating]   = useState(null);
+  const [paying, setPaying]       = useState(null);
+  const [toast, setToast]         = useState(null);   // { type: 'success'|'error', msg }
 
   useEffect(() => {
     contractApi.list()
@@ -41,499 +78,362 @@ function PendingOrdersPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleAccept = async (id) => {
-    setUpdating(id);
-    try {
-      await contractApi.updateStatus(id, 'active');
-      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'active', escrow_opted: false } : c));
-    } catch (err) { console.error(err); }
-    finally { setUpdating(null); setEscrowModal({ isOpen: false, contract: null }); }
+  const showToast = (type, msg) => {
+    setToast({ type, msg });
+    setTimeout(() => setToast(null), 5000);
   };
 
-  const handleEscrowAccept = async (id) => {
+  /* status update helper */
+  const updateStatus = async (id, newStatus) => {
     setUpdating(id);
     try {
-      const res = await contractApi.acceptWithEscrow(id);
-      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, ...res.contract } : c));
-    } catch (err) { console.error(err); }
-    finally { setUpdating(null); setEscrowModal({ isOpen: false, contract: null }); }
-  };
-
-  const handleCancel = async (id) => {
-    setUpdating(id);
-    try {
-      await contractApi.updateStatus(id, 'cancelled');
-      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'cancelled' } : c));
-    } catch (err) { console.error(err); }
-    finally { setUpdating(null); }
-  };
-
-  const handleVerifyWork = async (id) => {
-    setUpdating(id);
-    try {
-      await contractApi.updateStatus(id, 'work_verified');
-      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'work_verified' } : c));
-    } catch (err) { console.error(err); }
-    finally { setUpdating(null); }
-  };
-
-  const handlePaymentDone = async (id) => {
-    setUpdating(id);
-    try {
-      await contractApi.updateStatus(id, 'payment_done');
-      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'payment_done' } : c));
-    } catch (err) { console.error(err); }
-    finally { setUpdating(null); }
-  };
-
-  const handleComplete = async (id) => {
-    setUpdating(id);
-    try {
-      await contractApi.updateStatus(id, 'completed');
-      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'completed' } : c));
-    } catch (err) { console.error(err); }
-    finally { setUpdating(null); }
-  };
-
-  const handleSubmitWork = async (id) => {
-    setUpdating(id);
-    try {
-      await contractApi.updateStatus(id, 'work_submitted');
-      setContracts((prev) => prev.map((c) => c.id === id ? { ...c, status: 'work_submitted' } : c));
-    } catch (err) { console.error(err); }
-    finally { setUpdating(null); }
-  };
-
-  const handleRaiseDispute = async (e) => {
-    e.preventDefault();
-    if (!disputeModal.reason.trim()) return;
-    setUpdating(disputeModal.contractId);
-    try {
-      await disputeApi.create(disputeModal.contractId, disputeModal.reason);
-      setContracts((prev) => prev.map((c) => c.id === disputeModal.contractId ? { ...c, has_open_dispute: true } : c));
-      setDisputeModal({ isOpen: false, contractId: null, reason: '' });
-      alert('Dispute raised successfully. Communication is now paused until resolved.');
-    } catch (err) { 
+      const res = await contractApi.updateStatus(id, newStatus);
+      setContracts(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c));
+      showToast('success', `Contract moved to "${newStatus.replace('_', ' ')}"`);
+    } catch (err) {
       console.error(err);
-      alert('Failed to raise dispute.');
-    } finally { 
-      setUpdating(null); 
+      showToast('error', err?.error || 'Action failed. Please try again.');
+    } finally {
+      setUpdating(null);
     }
   };
 
-  // ── Razorpay Payment Flow ──────────────────────────────────────
+  /* Razorpay checkout */
   const handlePayNow = async (contract) => {
-    if (!window.Razorpay) {
-      alert('Payment gateway is loading. Please try again in a moment.');
-      return;
-    }
-    if (!RAZORPAY_KEY_ID) {
-      alert('Razorpay Key ID is not configured. Add VITE_RAZORPAY_KEY_ID to your .env file.');
-      return;
-    }
+    if (!window.Razorpay) { showToast('error', 'Payment gateway is loading. Please wait and try again.'); return; }
+    if (!RAZORPAY_KEY_ID) { showToast('error', 'Add VITE_RAZORPAY_KEY_ID to frontend/.env'); return; }
 
     setPaying(contract.id);
     try {
-      // Step 1: Create a Razorpay order on our backend
       const order = await paymentApi.createOrder(contract.id);
 
-      // Step 2: Open the Razorpay checkout modal
+      const isEscrowDeposit = contract.status === 'active';
+      const description = isEscrowDeposit
+        ? `Escrow deposit for: ${contract.deliverables?.slice(0, 60)}`
+        : `Final payment release for: ${contract.deliverables?.slice(0, 60)}`;
+
       const options = {
-        key: RAZORPAY_KEY_ID,
-        amount: order.amount,         // in paise (already set by backend)
+        key:      RAZORPAY_KEY_ID,
+        amount:   order.amount,
         currency: order.currency || 'INR',
-        name: 'MicroFluence',
-        description: `Payment for contract: ${contract.deliverables?.slice(0, 60)}`,
-        order_id: order.id,           // Razorpay order ID from backend
-        prefill: {
-          name: user?.email?.split('@')[0],
-          email: user?.email,
-        },
-        theme: { color: '#6366f1' },   // Indigo to match design system
+        name:     'MicroFluence',
+        description,
+        order_id: order.id,
+        prefill:  { name: user?.email?.split('@')[0], email: user?.email },
+        theme:    { color: '#6366f1' },
 
         handler: async (response) => {
-          // Step 3: Verify payment signature server-side
           try {
-            await paymentApi.verifyPayment(contract.id, {
-              razorpay_order_id: response.razorpay_order_id,
+            const verifyRes = await paymentApi.verifyPayment(contract.id, {
+              razorpay_order_id:   response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
+              razorpay_signature:  response.razorpay_signature,
             });
-            // Update local state
-            await contractApi.updateStatus(contract.id, 'payment_done');
-            setContracts((prev) =>
-              prev.map((c) => c.id === contract.id ? { ...c, status: 'payment_done', payment_intent_id: response.razorpay_payment_id } : c)
-            );
-            setPaymentResult({ success: true, id: contract.id, paymentId: response.razorpay_payment_id });
+            // Update local state with new status from backend
+            const newStatus = verifyRes.new_status || contract.status;
+            setContracts(prev => prev.map(c =>
+              c.id === contract.id
+                ? { ...c, status: newStatus, payment_intent_id: response.razorpay_payment_id }
+                : c
+            ));
+            if (isEscrowDeposit) {
+              showToast('success', '✅ Escrow funded! The influencer can now start work.');
+            } else {
+              showToast('success', '✅ Payment verified! We will release funds to the influencer.');
+            }
           } catch (verifyErr) {
-            console.error('Payment verification failed', verifyErr);
-            setPaymentResult({ success: false, id: contract.id });
+            console.error('Verify failed', verifyErr);
+            showToast('error', 'Payment captured but verification failed. Contact support with your payment ID.');
           } finally {
             setPaying(null);
           }
         },
-
-        modal: {
-          ondismiss: () => setPaying(null),
-        },
+        modal: { ondismiss: () => setPaying(null) },
       };
 
       const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', (response) => {
-        console.error('Razorpay payment failed:', response.error);
-        setPaymentResult({ success: false, id: contract.id });
-        setPaying(null);
-      });
+      rzp.on('payment.failed', () => { showToast('error', 'Payment failed or cancelled.'); setPaying(null); });
       rzp.open();
 
     } catch (err) {
-      console.error('Failed to create payment order:', err);
-      alert('Could not initialise payment. Make sure the contract is active and Razorpay is configured.');
+      console.error(err);
+      showToast('error', err?.error || 'Could not initialise payment. Check Razorpay configuration.');
       setPaying(null);
     }
   };
 
-  const pendingContracts = contracts.filter((c) => c.status === 'pending');
-  const activeContracts = contracts.filter((c) => c.status === 'active');
-  const completedContracts = contracts.filter((c) => c.status === 'completed');
   const isInfluencer = user?.role === 'influencer';
 
-  const getDeadlineCountdown = (deadline) => {
-    if (!deadline) return null;
-    const diff = new Date(deadline) - new Date();
-    if (diff <= 0) return 'Expired';
-    const h = Math.floor(diff / 3600000);
-    const m = Math.floor((diff % 3600000) / 60000);
-    return `${h}h ${m}m remaining`;
-  };
+  /* ── Counts ──────────────────────────────────────────────────── */
+  const pending   = contracts.filter(c => c.status === 'pending').length;
+  const active    = contracts.filter(c => ['active', 'work_submitted', 'work_verified'].includes(c.status)).length;
+  const done      = contracts.filter(c => ['completed', 'payment_done'].includes(c.status)).length;
 
-  const getReceiptNumber = (contract) => {
-    const year = new Date(contract.updated_at || contract.created_at).getFullYear();
-    return `MF-${year}-${contract.id?.slice(0, 8).toUpperCase()}`;
-  };
-
-  if (loading) {
-    return <div className="flex h-48 items-center justify-center text-slate-400">Loading contracts…</div>;
-  }
+  if (loading) return <div className="flex h-48 items-center justify-center text-slate-400">Loading contracts…</div>;
 
   return (
-    <section className="space-y-8 animate-fade-in font-sans">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between relative z-10">
-        <div>
-          <h2 className="text-3xl font-extrabold text-white font-display">Contracts &amp; Deals</h2>
-          <p className="mt-1.5 text-slate-400 font-medium">Track your pending proposals, active jobs, and completed work.</p>
-        </div>
+    <section className="space-y-6 animate-fade-up">
+
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-bold text-white">Contracts &amp; Deals</h2>
+        <p className="mt-1 text-slate-400">
+          {isInfluencer
+            ? 'Manage your deal proposals, escrow, and work submissions.'
+            : 'Propose deals, fund escrow, verify work, and release payments.'}
+        </p>
       </div>
 
-      {/* Payment result toast */}
-      {paymentResult && (
-        <div className={`flex items-start gap-4 rounded-2xl border px-6 py-5 text-sm shadow-xl animate-fade-down relative overflow-hidden backdrop-blur-md ${paymentResult.success
-            ? 'border-emerald-500/30 bg-emerald-900/20 text-emerald-300'
-            : 'border-red-500/30 bg-red-900/20 text-red-300'
-          }`}>
-          {paymentResult.success && <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-[40px] rounded-full pointer-events-none"></div>}
-          <span className="text-2xl relative z-10 bg-slate-900/50 p-2 rounded-full shadow-inner">{paymentResult.success ? '✅' : '❌'}</span>
-          <div className="relative z-10">
-            {paymentResult.success ? (
-              <>
-                <p className="font-extrabold text-base text-white">Payment Successful!</p>
-                <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-emerald-400/80">Ref: {paymentResult.paymentId}</p>
-              </>
-            ) : (
-              <p className="font-bold text-base text-white">Payment failed or was cancelled. Please try again.</p>
-            )}
-          </div>
-          <button onClick={() => setPaymentResult(null)} className="ml-auto text-slate-400 hover:text-white transition-colors relative z-10 bg-slate-900/50 hover:bg-slate-800 rounded-full p-1.5 flex items-center justify-center">✕</button>
+      {/* Toast */}
+      {toast && (
+        <div className={`flex items-start gap-3 rounded-xl border px-5 py-4 text-sm ${
+          toast.type === 'success'
+            ? 'border-emerald-700 bg-emerald-900/30 text-emerald-300'
+            : 'border-red-700 bg-red-900/30 text-red-300'
+        }`}>
+          <span className="mt-0.5 text-base">{toast.type === 'success' ? '✅' : '❌'}</span>
+          <p className="flex-1">{toast.msg}</p>
+          <button onClick={() => setToast(null)} className="text-slate-400 hover:text-white">✕</button>
         </div>
       )}
 
-      {/* Stats Dashboard */}
-      <div className="grid gap-6 sm:grid-cols-3 relative z-10">
+      {/* Stats */}
+      <div className="grid gap-4 sm:grid-cols-3">
         {[
-          { label: 'Pending Proposals', count: pendingContracts.length, color: 'text-amber-400', glow: 'bg-amber-500/10' },
-          { label: 'Active Jobs', count: activeContracts.length, color: 'text-blue-400', glow: 'bg-blue-500/10' },
-          { label: 'Completed', count: completedContracts.length, color: 'text-emerald-400', glow: 'bg-emerald-500/10' },
-        ].map((s, idx) => (
-          <article key={s.label} className="glow-hover glass-panel rounded-2xl p-6 relative overflow-hidden group" style={{ animationDelay: `${idx * 100}ms` }}>
-            <div className={`absolute -right-6 -top-6 h-32 w-32 rounded-full ${s.glow} blur-3xl group-hover:blur-2xl transition-all pointer-events-none`}></div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest relative z-10">{s.label}</p>
-            <p className={`mt-2 text-4xl font-extrabold font-display relative z-10 drop-shadow-sm ${s.color}`}>{s.count}</p>
+          { label: 'Pending Proposals',  count: pending, color: 'text-amber-300'   },
+          { label: 'Active / In Progress', count: active, color: 'text-blue-300'  },
+          { label: 'Completed / Paid',   count: done,    color: 'text-emerald-300' },
+        ].map(s => (
+          <article key={s.label} className="glow-hover rounded-xl border border-slate-800 bg-slate-900 p-5">
+            <p className="text-sm text-slate-400">{s.label}</p>
+            <p className={`mt-2 text-3xl font-bold ${s.color}`}>{s.count}</p>
           </article>
         ))}
       </div>
 
-      {/* Table Container */}
-      <div className="glass-panel rounded-2xl shadow-xl overflow-hidden relative z-10 border border-slate-700/50 bg-slate-900/40 backdrop-blur-xl">
-        <div className="border-b border-slate-800/60 px-6 py-5 bg-slate-900/50 flex justify-between items-center">
-          <h3 className="text-xl font-extrabold text-white font-display">All Contracts</h3>
-          <span className="text-xs font-semibold px-3 py-1 bg-slate-800 rounded-full text-slate-400 border border-slate-700">{contracts.length} Total</span>
-        </div>
-
-        {contracts.length === 0 ? (
-          <div className="px-6 py-16 flex flex-col items-center justify-center text-center">
-            <div className="h-16 w-16 rounded-full bg-slate-800/50 flex items-center justify-center mb-4 border border-slate-700/50 shadow-inner">📄</div>
-            <p className="text-base font-semibold text-slate-300">No contracts yet.</p>
-            <p className="text-sm text-slate-500 mt-1 max-w-sm">When you propose or receive a contract, it will appear here.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="min-w-full divide-y divide-slate-800/60">
-              <thead className="bg-slate-950/60 backdrop-blur-md">
-                <tr>
-                  {['Ref ID', isInfluencer ? 'Business' : 'Influencer', 'Deliverables', 'Amount', 'Status', 'Actions'].map((h) => (
-                    <th key={h} className="px-6 py-4 text-left text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 bg-transparent">
-                {contracts.map((c) => {
-                  const otherParty = isInfluencer
-                    ? (c.business_name || 'Business')
-                    : (c.influencer_handle ? `@${c.influencer_handle}` : 'Influencer');
-                  const isPaying = paying === c.id;
-                  const wasJustPaid = paymentResult?.success && paymentResult?.id === c.id;
-                  return (
-                    <tr key={c.id} className="transition-colors hover:bg-slate-800/30 group">
-                      <td className="px-6 py-5 text-xs font-mono font-medium text-slate-500 group-hover:text-slate-400">{c.id?.slice(0, 8)}</td>
-                      <td className="px-6 py-5 text-sm font-bold text-slate-200">{otherParty}</td>
-                      <td className="px-6 py-5 max-w-[220px] truncate text-sm text-slate-400 font-medium" title={c.deliverables}>{c.deliverables}</td>
-                      <td className="px-6 py-5 text-sm font-extrabold text-white font-display tracking-tight">₹{Number(c.agreed_price).toLocaleString('en-IN')}</td>
-                      <td className="px-6 py-5">
-                        <StatusBadge status={wasJustPaid ? 'paid' : c.status} />
-                        {c.has_open_dispute && (
-                          <span className="ml-2 inline-flex items-center rounded-md bg-red-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-400 border border-red-500/20">
-                            Disputed
-                          </span>
-                        )}
-                        {c.escrow_opted && (
-                          <span className="ml-2 inline-flex items-center rounded-md bg-violet-500/10 px-2 py-1 text-[10px] font-bold text-violet-400 border border-violet-500/20">
-                            🛡️ Escrow
-                          </span>
-                        )}
-                        {c.escrow_opted && c.deadline_at && c.status === 'active' && (
-                          <p className="mt-1 text-[10px] text-amber-400 font-semibold">
-                            ⏱ {getDeadlineCountdown(c.deadline_at)}
-                          </p>
-                        )}
-                        {c.status === 'completed' && (
-                          <p className="mt-1 font-mono text-[10px] text-emerald-400/70">{getReceiptNumber(c)}</p>
-                        )}
-                      </td>
-                      <td className="px-6 py-5">
-                        {/* Influencer: accept or decline pending contracts */}
-                        {c.status === 'pending' && isInfluencer && (
-                          <div className="flex gap-2.5">
-                            <button onClick={() => setEscrowModal({ isOpen: true, contract: c })} disabled={updating === c.id}
-                              className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none">
-                              Accept
-                            </button>
-                            <button onClick={() => handleCancel(c.id)} disabled={updating === c.id}
-                              className="rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-1.5 text-xs font-bold text-slate-300 transition-all hover:bg-slate-700 hover:text-white hover:border-slate-600 disabled:opacity-50 disabled:pointer-events-none">
-                              Decline
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Influencer: active contract -> Submit Work */}
-                        {c.status === 'active' && isInfluencer && (
-                          <div className="flex flex-wrap gap-2.5 items-center">
-                            <button onClick={() => handleSubmitWork(c.id)} disabled={updating === c.id || c.has_open_dispute}
-                              className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none">
-                              Submit Work
-                            </button>
-                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
-                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
-                              Dispute
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Business: active contract -> Awaiting Work */}
-                        {c.status === 'active' && !isInfluencer && (
-                          <div className="flex flex-wrap gap-2.5 items-center">
-                            <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500 pr-2 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-slate-600 animate-pulse"></span>Awaiting work...</span>
-                            <button onClick={() => handleCancel(c.id)} disabled={updating === c.id || c.has_open_dispute}
-                              className="rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-bold text-slate-300 transition-all hover:bg-slate-700 hover:text-white disabled:opacity-50 disabled:pointer-events-none">
-                              Cancel
-                            </button>
-                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
-                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
-                              Dispute
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Business: work_submitted -> Verify Work */}
-                        {c.status === 'work_submitted' && !isInfluencer && (
-                          <div className="flex flex-wrap gap-2.5">
-                            <button onClick={() => handleVerifyWork(c.id)} disabled={updating === c.id || c.has_open_dispute}
-                              className="rounded-lg border border-emerald-500/30 bg-emerald-900/20 px-3 py-1.5 text-xs font-bold text-emerald-400 transition-colors hover:bg-emerald-900/40 hover:text-emerald-300 disabled:opacity-50">
-                              ✓ Verify Work
-                            </button>
-                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
-                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
-                              Dispute
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Influencer: work_submitted -> Awaiting Verification */}
-                        {c.status === 'work_submitted' && isInfluencer && (
-                          <div className="flex flex-wrap gap-2.5 items-center">
-                            <span className="text-[10px] font-bold tracking-widest uppercase text-emerald-400 pr-2">Awaiting Verification</span>
-                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
-                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
-                              Dispute
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Business: work_verified -> Pay Now or Mark Paid */}
-                        {c.status === 'work_verified' && !isInfluencer && (
-                          <div className="flex flex-wrap gap-2.5">
-                            <button onClick={() => handlePayNow(c)} disabled={isPaying || c.has_open_dispute}
-                              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/20 transition-all hover:bg-emerald-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none glow-hover">
-                              {isPaying ? <span className="animate-pulse">Processing…</span> : <>💳 Pay Now</>}
-                            </button>
-                            <button onClick={() => handlePaymentDone(c.id)} disabled={updating === c.id || c.has_open_dispute}
-                              className="rounded-lg border border-emerald-500/30 bg-emerald-900/20 px-3 py-1.5 text-xs font-bold text-emerald-400 transition-colors hover:bg-emerald-900/40 hover:text-emerald-300 disabled:opacity-50">
-                              ✓ Mark Paid Manually
-                            </button>
-                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
-                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
-                              Dispute
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Influencer: work_verified -> Awaiting Payment */}
-                        {c.status === 'work_verified' && isInfluencer && (
-                          <div className="flex flex-wrap gap-2.5 items-center">
-                            <span className="text-[10px] font-bold tracking-widest uppercase text-emerald-400 pr-2">Awaiting Payment</span>
-                          </div>
-                        )}
-
-                        {/* Influencer: payment_done -> Confirm Completion */}
-                        {c.status === 'payment_done' && isInfluencer && (
-                          <div className="flex flex-wrap gap-2.5 items-center">
-                            <button onClick={() => handleComplete(c.id)} disabled={updating === c.id || c.has_open_dispute}
-                              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/20 transition-all hover:bg-emerald-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none glow-hover">
-                              ✓ Confirm Completion
-                            </button>
-                            <button onClick={() => setDisputeModal({ isOpen: true, contractId: c.id, reason: '' })} 
-                              className="rounded-lg border border-red-900/50 bg-red-900/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-900/30 hover:text-red-300">
-                              Dispute
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Business: payment_done -> Awaiting Influencer Confirmation */}
-                        {c.status === 'payment_done' && !isInfluencer && (
-                          <div className="flex flex-wrap gap-2.5 items-center">
-                            <span className="text-[10px] font-bold tracking-widest uppercase text-emerald-400 pr-2">Awaiting Influencer Receipt</span>
-                          </div>
-                        )}
-
-                        {/* Completed / paid */}
-                        {(c.status === 'completed' || wasJustPaid) && (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold uppercase tracking-widest text-emerald-400 shadow-inner">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                            Done
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Razorpay Setup Notice */}
+      {/* Razorpay key missing warning (business only) */}
       {!RAZORPAY_KEY_ID && !isInfluencer && (
         <div className="rounded-xl border border-amber-700/40 bg-amber-900/20 px-5 py-4 text-sm text-amber-300">
           <p className="font-semibold">⚠️ Razorpay not configured</p>
-          <p className="mt-1 opacity-80">
-            Add <code className="rounded bg-amber-900/50 px-1">VITE_RAZORPAY_KEY_ID=rzp_test_XXXX</code> to your{' '}
-            <code className="rounded bg-amber-900/50 px-1">frontend/.env</code> file and restart the dev server.
-          </p>
+          <p className="mt-1 opacity-80">Add <code className="rounded bg-amber-900/50 px-1">VITE_RAZORPAY_KEY_ID=rzp_test_XXXX</code> to <code className="rounded bg-amber-900/50 px-1">frontend/.env</code> and restart.</p>
         </div>
       )}
 
-      {/* Dispute Modal */}
-      {disputeModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
-            <h3 className="text-lg font-bold text-white mb-2">Raise a Dispute</h3>
-            <p className="text-sm text-slate-400 mb-4">Please detail the issue. This will pause platform communication with the other party until an admin resolves it.</p>
-            
-            <form onSubmit={handleRaiseDispute}>
-              <textarea
-                className="w-full rounded-xl border border-slate-700 bg-slate-800 p-3 text-sm text-white placeholder-slate-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
-                rows="4"
-                placeholder="Explain the problem (e.g., work not submitted, payment delayed, poor quality...)"
-                value={disputeModal.reason}
-                onChange={(e) => setDisputeModal(m => ({ ...m, reason: e.target.value }))}
-                required
-              />
-              <div className="mt-5 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setDisputeModal({ isOpen: false, contractId: null, reason: '' })}
-                  className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!disputeModal.reason.trim() || updating === disputeModal.contractId}
-                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 disabled:opacity-50"
-                >
-                  {updating === disputeModal.contractId ? 'Submitting...' : 'Submit Dispute'}
-                </button>
-              </div>
-            </form>
-          </div>
+      {/* Contract cards */}
+      {contracts.length === 0 ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900 px-5 py-12 text-center text-slate-500">
+          No contracts yet.
         </div>
-      )}
+      ) : (
+        <div className="space-y-4">
+          {contracts.map(c => {
+            const otherParty = isInfluencer
+              ? (c.business_name || 'Business')
+              : (c.influencer_handle ? `@${c.influencer_handle}` : 'Influencer');
+            const isPaying = paying === c.id;
+            const isUpdating = updating === c.id;
 
-      {/* Escrow Choice Modal */}
-      {escrowModal.isOpen && escrowModal.contract && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-white mb-1">Accept Contract</h3>
-            <p className="text-sm text-slate-400 mb-1">Choose how you'd like to accept this contract:</p>
-            <p className="text-xs font-mono text-indigo-400 mb-5">#{escrowModal.contract.id?.slice(0,8)} · ₹{Number(escrowModal.contract.agreed_price).toLocaleString('en-IN')}</p>
-            <div className="space-y-3 mb-5">
-              <button onClick={() => handleEscrowAccept(escrowModal.contract.id)} disabled={updating === escrowModal.contract.id}
-                className="w-full flex items-start gap-4 rounded-xl border border-emerald-500/30 bg-emerald-900/10 p-4 hover:bg-emerald-900/20 transition-all disabled:opacity-50 text-left">
-                <span className="text-2xl shrink-0">🛡️</span>
-                <div>
-                  <p className="font-bold text-emerald-400 text-sm">Accept with Escrow</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Business must fund escrow in 24h. Your payment is guaranteed before you start work.</p>
+            return (
+              <article key={c.id} className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
+
+                {/* Card header */}
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-white">{otherParty}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">#{c.id?.slice(0, 8)}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {c.escrow_opted && (
+                      <span className="rounded-full bg-violet-900/40 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-300">
+                        🔒 Escrow
+                      </span>
+                    )}
+                    <StatusBadge status={c.status} />
+                  </div>
                 </div>
-              </button>
-              <button onClick={() => handleAccept(escrowModal.contract.id)} disabled={updating === escrowModal.contract.id}
-                className="w-full flex items-start gap-4 rounded-xl border border-slate-700 bg-slate-800/50 p-4 hover:bg-slate-800 transition-all disabled:opacity-50 text-left">
-                <span className="text-2xl shrink-0">🤝</span>
-                <div>
-                  <p className="font-bold text-slate-200 text-sm">Accept without Escrow</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Trust-based. Business pays on completion. MicroFluence does not guarantee payment.</p>
+
+                {/* Escrow Progress bar */}
+                <div className="mt-3">
+                  <EscrowProgress status={c.status} escrow_opted={c.escrow_opted} />
                 </div>
-              </button>
-            </div>
-            <div className="flex items-center justify-between">
-              <button onClick={() => setShowEscrowInfo(true)} className="text-xs text-indigo-400 underline hover:text-indigo-300">💡 What is Escrow?</button>
-              <button onClick={() => setEscrowModal({ isOpen: false, contract: null })} className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-400 hover:bg-slate-800">Cancel</button>
-            </div>
-          </div>
+
+                {/* Details */}
+                <div className="mt-4 grid gap-3 sm:grid-cols-3 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-500 uppercase tracking-wide mb-0.5">Amount</p>
+                    <p className="font-bold text-white text-lg">₹{Number(c.agreed_price).toLocaleString('en-IN')}</p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <p className="text-xs text-slate-500 uppercase tracking-wide mb-0.5">Deliverables</p>
+                    <p className="text-slate-300">{c.deliverables}</p>
+                  </div>
+                </div>
+
+                {/* Payment ID if paid */}
+                {c.payment_intent_id && (
+                  <p className="mt-2 text-[11px] text-slate-500">Payment ID: {c.payment_intent_id}</p>
+                )}
+
+                {/* ── Action Buttons ─────────────────────────────── */}
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-800 pt-4">
+
+                  {/* ── INFLUENCER ACTIONS ── */}
+                  {isInfluencer && (
+                    <>
+                      {/* Pending: Accept normally or Accept with Escrow */}
+                      {c.status === 'pending' && (
+                        <>
+                          <button onClick={() => updateStatus(c.id, 'active')} disabled={isUpdating}
+                            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">
+                            ✓ Accept
+                          </button>
+                          <button
+                            onClick={async () => {
+                              setUpdating(c.id);
+                              try {
+                                const res = await contractApi.escrowAccept(c.id);
+                                setContracts(prev => prev.map(x => x.id === c.id ? { ...x, status: 'active', escrow_opted: true } : x));
+                                showToast('success', '🔒 Accepted with Escrow! Business has 24 hours to fund.');
+                              } catch (err) { showToast('error', err?.error || 'Failed'); }
+                              finally { setUpdating(null); }
+                            }}
+                            disabled={isUpdating}
+                            className="rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-2 text-sm font-semibold text-white hover:from-violet-500 hover:to-purple-500 disabled:opacity-50">
+                            🔒 Accept with Escrow
+                          </button>
+                          <button onClick={() => updateStatus(c.id, 'cancelled')} disabled={isUpdating}
+                            className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-600 disabled:opacity-50">
+                            Decline
+                          </button>
+                        </>
+                      )}
+
+                      {/* Active (escrow funded): influencer submits work */}
+                      {c.status === 'active' && (
+                        <button onClick={() => updateStatus(c.id, 'work_submitted')} disabled={isUpdating}
+                          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
+                          📤 Submit Work as Done
+                        </button>
+                      )}
+
+                      {/* Work submitted: waiting for business */}
+                      {c.status === 'work_submitted' && (
+                        <span className="text-sm text-slate-400 italic">⏳ Waiting for business to verify your work…</span>
+                      )}
+
+                      {/* Work verified: waiting for payment */}
+                      {c.status === 'work_verified' && (
+                        <span className="text-sm text-slate-400 italic">✅ Work verified! Business is releasing payment to platform…</span>
+                      )}
+
+                      {/* Payment done: confirm receipt */}
+                      {c.status === 'payment_done' && (
+                        <>
+                          <p className="text-sm text-emerald-400 font-semibold">
+                            💰 Platform has received payment. Payout will be transferred to your UPI/bank shortly.
+                          </p>
+                          <button onClick={() => updateStatus(c.id, 'completed')} disabled={isUpdating}
+                            className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-50">
+                            ✓ Confirm & Close Contract
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
+
+                  {/* ── BUSINESS ACTIONS ── */}
+                  {!isInfluencer && (
+                    <>
+                      {/* Pending: waiting for influencer */}
+                      {c.status === 'pending' && (
+                        <>
+                          <span className="text-sm text-slate-400 italic">⏳ Waiting for influencer to accept…</span>
+                          <button onClick={() => updateStatus(c.id, 'cancelled')} disabled={isUpdating}
+                            className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-600 disabled:opacity-50">
+                            Withdraw
+                          </button>
+                        </>
+                      )}
+
+                      {/* Active with escrow: business MUST pay escrow now */}
+                      {c.status === 'active' && c.escrow_opted && !c.payment_intent_id && (
+                        <div className="flex w-full flex-col gap-2">
+                          <div className="rounded-lg bg-violet-900/30 border border-violet-700/40 px-4 py-3 text-sm text-violet-300">
+                            🔒 <strong>Escrow Required:</strong> The influencer chose escrow protection. You must fund the escrow before work begins. Your money is held safely by MicroFluence and released only after you verify the work.
+                          </div>
+                          <button
+                            onClick={() => handlePayNow(c)}
+                            disabled={isPaying}
+                            className="flex items-center gap-2 self-start rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2.5 font-bold text-white shadow-lg hover:from-violet-500 hover:to-indigo-500 disabled:opacity-50">
+                            {isPaying ? <span className="animate-pulse">Processing…</span> : '💳 Fund Escrow Now'}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Active without escrow OR escrow already funded */}
+                      {c.status === 'active' && (!c.escrow_opted || c.payment_intent_id) && (
+                        <div className="flex flex-wrap gap-2">
+                          {c.payment_intent_id && (
+                            <span className="text-xs text-emerald-400 font-semibold">✅ Escrow funded — influencer is working</span>
+                          )}
+                          <button onClick={() => updateStatus(c.id, 'cancelled')} disabled={isUpdating}
+                            className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-600 disabled:opacity-50">
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Work submitted: business verifies */}
+                      {c.status === 'work_submitted' && (
+                        <div className="flex flex-wrap gap-2">
+                          <button onClick={() => updateStatus(c.id, 'work_verified')} disabled={isUpdating}
+                            className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-600 disabled:opacity-50">
+                            ✓ Verify Work
+                          </button>
+                          <button onClick={() => updateStatus(c.id, 'cancelled')} disabled={isUpdating}
+                            className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-600 disabled:opacity-50">
+                            Dispute / Cancel
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Work verified: business releases final payment */}
+                      {c.status === 'work_verified' && (
+                        <div className="flex w-full flex-col gap-2">
+                          <div className="rounded-lg bg-emerald-900/30 border border-emerald-700/40 px-4 py-3 text-sm text-emerald-300">
+                            ✅ <strong>Work verified!</strong> Release the final payment to MicroFluence. We will transfer it to the influencer's bank/UPI account within 24 hours.
+                          </div>
+                          <button
+                            onClick={() => handlePayNow(c)}
+                            disabled={isPaying}
+                            className="flex items-center gap-2 self-start rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 font-bold text-white shadow-lg hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50">
+                            {isPaying ? <span className="animate-pulse">Processing…</span> : '💳 Release Payment'}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Payment done */}
+                      {c.status === 'payment_done' && (
+                        <span className="text-sm text-emerald-400 font-semibold">
+                          💰 Payment sent to platform. Influencer will receive funds shortly.
+                        </span>
+                      )}
+                    </>
+                  )}
+
+                  {/* Completed / Cancelled — no actions */}
+                  {c.status === 'completed' && (
+                    <span className="text-sm font-semibold text-emerald-400">🎉 Contract completed!</span>
+                  )}
+                  {c.status === 'cancelled' && (
+                    <span className="text-sm text-red-400 italic">Contract cancelled</span>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
-
-      {/* Escrow Explainer */}
-      {showEscrowInfo && <EscrowExplainerModal onClose={() => setShowEscrowInfo(false)} />}
     </section>
   );
 }
