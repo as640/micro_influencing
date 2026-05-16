@@ -71,11 +71,17 @@ function PendingOrdersPage() {
   const [paying, setPaying]       = useState(null);
   const [toast, setToast]         = useState(null);   // { type: 'success'|'error', msg }
 
-  useEffect(() => {
+  const fetchContracts = () => {
     contractApi.list()
       .then(setContracts)
       .catch(console.error)
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchContracts();
+    const interval = setInterval(fetchContracts, 10000); // poll every 10s
+    return () => clearInterval(interval);
   }, []);
 
   const showToast = (type, msg) => {
@@ -240,7 +246,7 @@ function PendingOrdersPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-white">{otherParty}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">#{c.id?.slice(0, 8)}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{c.display_number || `#${c.id?.slice(0, 8)}`}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {c.escrow_opted && (

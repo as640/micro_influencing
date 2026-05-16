@@ -126,3 +126,25 @@
     background-position: 0% 50%;
   }
 }
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes shine {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 250ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

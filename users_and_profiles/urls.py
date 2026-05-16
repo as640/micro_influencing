@@ -29,7 +29,7 @@ from .views import (
     # Instagram OAuth
     InstagramAuthURLView, InstagramCallbackView,
     # Superadmin
-    SuperadminDashboardStatsView,
+    SuperadminDashboardStatsView, SuperadminBusinessVerifyView,
     # GST / Setu
     PublicBusinessGSTRequestOTPView, BusinessGSTRequestOTPView, BusinessGSTVerifyOTPView,
     # Admin helpers
@@ -42,6 +42,7 @@ urlpatterns = [
 
     # ── Superadmin ───────────────────────────────────────────
     path('superadmin/dashboard-stats/', SuperadminDashboardStatsView.as_view(), name='superadmin-dashboard-stats'),
+    path('superadmin/verify-business/<uuid:pk>/', SuperadminBusinessVerifyView.as_view(), name='superadmin-verify-business'),
 
     # ── Auth ─────────────────────────────────────────────────
     path('auth/register/',      RegisterView.as_view(),      name='auth-register'),

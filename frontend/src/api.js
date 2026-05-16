@@ -151,6 +151,7 @@ export const instagramApi = {
 // ─── Superadmin ───────────────────────────────────────────────────────────────
 export const superadminApi = {
     getDashboardStats: () => request('GET', '/superadmin/dashboard-stats/'),
+    verifyBusiness: (id) => request('POST', `/superadmin/verify-business/${id}/`, {}),
 };
 
 // ─── Business / GST ───────────────────────────────────────────────────────────

@@ -96,7 +96,7 @@ function HomePage() {
             <div className="animate-gradient absolute inset-0 bg-gradient-to-r from-indigo-600/20 via-violet-600/20 to-cyan-600/20 opacity-50"></div>
             <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-indigo-500/30 blur-[80px]"></div>
             <div className="relative z-10 flex flex-col md:flex-row md:items-center gap-6">
-              <ProfileCompletionRing percentage={pct} size={100} strokeWidth={8} />
+              {pct < 100 && <ProfileCompletionRing percentage={pct} size={100} strokeWidth={8} />}
               <div>
                 <p className="text-sm font-bold uppercase tracking-widest text-indigo-400">Your Dashboard</p>
                 <h2 className="mt-1 text-3xl font-extrabold text-white">
@@ -110,15 +110,13 @@ function HomePage() {
                     </svg>
                   )}
                 </h2>
-                {pct < 100 ? (
+                {pct < 100 && (
                   <p className="mt-2 text-amber-300 font-semibold text-sm">
                     ⚡ Your profile is {pct}% complete.{' '}
                     <button onClick={() => navigate('/dashboard/account')} className="underline hover:text-amber-200">
                       Complete it to apply to campaigns.
                     </button>
                   </p>
-                ) : (
-                  <p className="mt-2 text-emerald-400 font-semibold text-sm">✅ Profile 100% complete — you can apply to campaigns!</p>
                 )}
               </div>
             </div>

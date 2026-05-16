@@ -105,6 +105,37 @@ class SuperadminDashboardStatsView(APIView):
 
         open_disputes = Dispute.objects.filter(status='open').count()
 
+        # Active contracts with details for admin dashboard
+        active_contracts_qs = Contract.objects.filter(
+            status__in=['active', 'work_submitted', 'work_verified', 'payment_done']
+        ).select_related('business', 'influencer').order_by('-updated_at')[:50]
+
+        active_contracts_data = [{
+            'id': str(c.id),
+            'display_number': c.display_number,
+            'business_name': c.business.company_name,
+            'influencer_handle': c.influencer.instagram_handle,
+            'status': c.status,
+            'agreed_price': float(c.agreed_price),
+            'escrow_opted': c.escrow_opted,
+            'created_at': c.created_at.isoformat(),
+        } for c in active_contracts_qs]
+
+        # Pending GST verifications
+        pending_gst_qs = BusinessProfile.objects.filter(
+            gstin__isnull=False, is_verified=False
+        ).exclude(gstin='').select_related('user')[:50]
+
+        pending_verifications = [{
+            'id': str(b.id),
+            'company_name': b.company_name,
+            'gstin': b.gstin,
+            'legal_name': b.legal_name or '',
+            'industry': b.industry,
+            'email': b.user.email,
+            'created_at': b.user.created_at.isoformat() if hasattr(b.user, 'created_at') else '',
+        } for b in pending_gst_qs]
+
         return Response({
             'total_businesses': total_businesses,
             'total_influencers': total_influencers,
@@ -114,6 +145,27 @@ class SuperadminDashboardStatsView(APIView):
             'total_active_contracts': total_active_contracts,
             'total_platform_value': float(total_platform_value),
             'open_disputes': open_disputes,
+            'active_contracts': active_contracts_data,
+            'pending_verifications': pending_verifications,
+        }, status=status.HTTP_200_OK)
+
+
+class SuperadminBusinessVerifyView(APIView):
+    """
+    POST /api/superadmin/verify-business/<uuid>/
+    Superadmin clicks 'Verify' on a business with a valid GST number.
+    Sets is_verified=True.
+    """
+    permission_classes = [IsAuthenticated, IsSuperUser]
+
+    def post(self, request, pk):
+        business = get_object_or_404(BusinessProfile, pk=pk)
+        business.is_verified = True
+        business.save(update_fields=['is_verified', 'updated_at'])
+        return Response({
+            'message': f'{business.company_name} has been verified.',
+            'id': str(business.id),
+            'is_verified': True,
         }, status=status.HTTP_200_OK)
 
 
@@ -839,24 +891,36 @@ class ContractPaymentVerifyView(APIView):
         contract.payment_intent_id = payment_id
 
         # Advance contract state based on what stage payment was made
+        payout_result = None
         if contract.status == ContractStatus.ACTIVE:
-            # This is the escrow deposit — work can now begin
-            contract.status = ContractStatus.WORK_SUBMITTED  # Reuse: means "funded, work can start"
-            # Actually keep it as ACTIVE so influencer can submit work
-            # We just store the escrow payment ID
-            contract.status = ContractStatus.ACTIVE  # stays active — escrow is now funded
+            # Escrow deposit — stay active, influencer can now start work
+            pass  # status stays ACTIVE, escrow is funded
         elif contract.status == ContractStatus.WORK_VERIFIED:
-            # This is the final payout trigger — platform holds the money and will release manually
+            # Final payment → auto-transfer 98% to influencer, keep 2% commission
             contract.status = ContractStatus.PAYMENT_DONE
+            try:
+                payout_result = payment_service.transfer_payout(
+                    payment_id=payment_id,
+                    amount_inr=float(contract.agreed_price),
+                    influencer_profile=contract.influencer,
+                )
+                contract.payout_transfer_id = payout_result.get('id', '')
+            except ValueError as e:
+                # Payout failed but payment was captured — admin will handle manually
+                import logging
+                logging.getLogger(__name__).error(f"Auto-payout failed for contract {contract.id}: {e}")
 
-        contract.save(update_fields=['payment_intent_id', 'status', 'updated_at'])
+        contract.save(update_fields=['payment_intent_id', 'payout_transfer_id', 'status', 'updated_at'])
 
-        return Response({
+        resp = {
             'message': 'Payment verified. Escrow is now funded — work can begin!' if contract.status == ContractStatus.ACTIVE
-                       else 'Final payment verified. Platform will release funds to influencer shortly.',
+                       else 'Payment verified & payout initiated to influencer (98%, 2% commission deducted).',
             'payment_id': payment_id,
             'new_status': contract.status,
-        }, status=status.HTTP_200_OK)
+        }
+        if payout_result:
+            resp['payout'] = payout_result
+        return Response(resp, status=status.HTTP_200_OK)
 
 
 # ===========================================================================

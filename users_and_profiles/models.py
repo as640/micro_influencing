@@ -337,6 +337,8 @@ class Message(models.Model):
 
 class Contract(models.Model):
     id                = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    contract_number   = models.PositiveIntegerField(unique=True, editable=False, null=True,
+                            help_text='Auto-incrementing human-readable contract number')
     business          = models.ForeignKey(
                             BusinessProfile,
                             on_delete=models.RESTRICT,
@@ -373,6 +375,8 @@ class Contract(models.Model):
     completion_deadline = models.DateTimeField(blank=True, null=True,
                             help_text='Agreed deadline to complete the work')
     payment_intent_id = models.CharField(max_length=255, blank=True, null=True)
+    payout_transfer_id = models.CharField(max_length=255, blank=True, null=True,
+                            help_text='Razorpay transfer ID when payout is sent to influencer')
 
     created_at        = models.DateTimeField(auto_now_add=True)
     updated_at        = models.DateTimeField(auto_now=True)
@@ -383,9 +387,19 @@ class Contract(models.Model):
         verbose_name_plural = 'Contracts'
         ordering = ['-created_at']
 
+    def save(self, *args, **kwargs):
+        if self.contract_number is None:
+            last = Contract.objects.order_by('-contract_number').values_list('contract_number', flat=True).first()
+            self.contract_number = (last or 0) + 1
+        super().save(*args, **kwargs)
+
+    @property
+    def display_number(self):
+        return f'MF-{self.contract_number:04d}' if self.contract_number else str(self.id)[:8]
+
     def __str__(self):
         return (
-            f'Contract #{self.id} | {self.business.company_name} ↔ '
+            f'Contract {self.display_number} | {self.business.company_name} ↔ '
             f'@{self.influencer.instagram_handle} [{self.status}]'
         )
 

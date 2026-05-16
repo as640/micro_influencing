@@ -457,12 +457,13 @@ class ContractSerializer(serializers.ModelSerializer):
     influencer_picture = serializers.ImageField(source='influencer.user.profile_picture', read_only=True)
     campaign_title     = serializers.CharField(source='campaign.title', default=None, read_only=True)
     has_open_dispute   = serializers.SerializerMethodField()
+    display_number     = serializers.CharField(read_only=True)
 
     class Meta:
         model  = Contract
         fields = [
-            'id', 'status', 'has_open_dispute',
-            'agreed_price', 'deliverables', 'payment_intent_id',
+            'id', 'contract_number', 'display_number', 'status', 'has_open_dispute',
+            'agreed_price', 'deliverables', 'payment_intent_id', 'payout_transfer_id',
             'escrow_opted', 'deadline_at', 'completion_deadline',
             'created_at', 'updated_at',
             # write-only FKs

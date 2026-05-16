@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink, Outlet, Navigate } from 'react-router-dom';
 import BrandLogo from './BrandLogo';
 import ProfileCompletionRing from './ProfileCompletionRing';
@@ -45,6 +46,7 @@ const getNavItems = (role, isSuperUser) => {
 
 function DashboardLayout() {
   const { user, logout, loading } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   if (loading) {
     return (
@@ -65,7 +67,10 @@ function DashboardLayout() {
     || user.business_profiles?.[0]?.company_name
     || user.email;
 
-  const roleDisplay = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+  const navItems = getNavItems(user.role, user.is_superuser);
+
+  // Bottom bar shows top 5 items for quick access
+  const bottomBarItems = navItems.slice(0, 5);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-950 text-slate-100 font-sans animate-fade-in relative">
@@ -73,7 +78,7 @@ function DashboardLayout() {
       <div className="absolute top-0 right-[10%] w-[500px] h-[500px] bg-indigo-600/10 blur-[150px] rounded-full pointer-events-none z-0"></div>
       <div className="absolute bottom-[-10%] left-[20%] w-[600px] h-[500px] bg-violet-600/10 blur-[150px] rounded-full pointer-events-none z-0"></div>
 
-      {/* Sidebar */}
+      {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-72 flex-col border-r border-slate-800/60 bg-slate-900/60 backdrop-blur-2xl z-20">
         
         <div className="flex items-center gap-3 px-6 py-6">
@@ -95,7 +100,7 @@ function DashboardLayout() {
 
         <nav className="flex-1 space-y-1.5 px-4 overflow-y-auto overflow-x-hidden custom-scrollbar pb-6">
           <p className="px-3 mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">Menu</p>
-          {getNavItems(user.role, user.is_superuser).map((item) => (
+          {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -144,21 +149,72 @@ function DashboardLayout() {
         </div>
       </aside>
 
+      {/* Mobile slide-out menu overlay */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
+          <aside className="absolute left-0 top-0 bottom-0 w-72 bg-slate-900 border-r border-slate-800 flex flex-col animate-slide-in-left">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+              <BrandLogo className="h-10 w-auto" />
+              <button onClick={() => setMobileMenuOpen(false)} className="p-2 text-slate-400 hover:text-white">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
+              {navItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${isActive
+                      ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20'
+                      : 'text-slate-400 hover:bg-slate-800 border border-transparent'
+                    }`
+                  }
+                >
+                  <span className="text-lg">{item.icon}</span>
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
+            {/* Logout at bottom */}
+            <div className="p-4 border-t border-slate-800">
+              <button onClick={logout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-red-400 hover:bg-red-400/10">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Sign Out
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+
       {/* Main content */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">
         
-        <header className="sticky top-0 z-20 border-b border-slate-800/60 bg-slate-950/70 backdrop-blur-xl px-6 lg:px-10 py-3 flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-4">
+        <header className="sticky top-0 z-20 border-b border-slate-800/60 bg-slate-950/70 backdrop-blur-xl px-4 sm:px-6 lg:px-10 py-3 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-3">
+            {/* Mobile hamburger */}
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
             <div className="md:hidden">
               <BrandLogo className="h-8 w-auto" />
             </div>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             {isInfluencer && pct < 100 && (
-              <NavLink to="/dashboard/account" className="flex items-center gap-2 rounded-xl bg-amber-900/20 border border-amber-500/20 px-3 py-1.5 hover:bg-amber-900/30 transition-all">
+              <NavLink to="/dashboard/account" className="flex items-center gap-2 rounded-xl bg-amber-900/20 border border-amber-500/20 px-2 sm:px-3 py-1.5 hover:bg-amber-900/30 transition-all">
                 <ProfileCompletionRing percentage={pct} size={24} strokeWidth={3} showLabel={false} />
-                <span className="text-xs font-bold text-amber-300">{pct}% complete</span>
+                <span className="text-xs font-bold text-amber-300 hidden sm:inline">{pct}% complete</span>
               </NavLink>
             )}
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition cursor-pointer">
@@ -169,10 +225,40 @@ function DashboardLayout() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-10 custom-scrollbar">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-8 lg:p-10 pb-20 md:pb-8 custom-scrollbar">
           <Outlet />
         </main>
       </div>
+
+      {/* Mobile bottom navigation bar */}
+      <nav className="fixed bottom-0 left-0 right-0 z-30 md:hidden border-t border-slate-800 bg-slate-900/95 backdrop-blur-xl safe-area-bottom">
+        <div className="flex items-center justify-around px-1 py-1">
+          {bottomBarItems.map(item => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                `flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg text-center transition-all min-w-0 flex-1 ${
+                  isActive
+                    ? 'text-indigo-400'
+                    : 'text-slate-500'
+                }`
+              }
+            >
+              <span className="text-lg leading-none">{item.icon}</span>
+              <span className="text-[9px] font-semibold truncate w-full">{item.label.split(' ').slice(0,2).join(' ')}</span>
+            </NavLink>
+          ))}
+          {/* More menu item */}
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg text-center text-slate-500 min-w-0 flex-1"
+          >
+            <span className="text-lg leading-none">☰</span>
+            <span className="text-[9px] font-semibold">More</span>
+          </button>
+        </div>
+      </nav>
     </div>
   );
 }
