@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('users_and_profiles', '0002_add_influencer_payout_fields'),
+        ('users_and_profiles', '0008_influencer_overhaul_v2'),
     ]
 
     operations = [
